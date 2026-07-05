@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 pluginManagement {
     repositories {
         google()
@@ -14,5 +17,8 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MangoCodex"
+val appProps = Properties().apply {
+    load(FileInputStream(file("app.properties")))
+}
+rootProject.name = appProps.getProperty("app.name")
 include(":app")

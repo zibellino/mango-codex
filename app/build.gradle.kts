@@ -1,24 +1,52 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
 
+val appProps = Properties().apply {
+    load(FileInputStream(rootProject.file("app.properties")))
+}
+val appName: String = appProps.getProperty("app.name")
+val appPackage: String = appProps.getProperty("app.package")
+
+// versionCode/versionName are normally passed in from CI as project properties
+// (-PappVersionCode=... -PappVersionName=...), derived from the run number and
+// release tag respectively. Falls back to app.properties for local/dev builds
+// where nobody passes those flags — versionCode 1 is fine locally since it's
+// never uploaded anywhere.
+val ciVersionCode = (project.findProperty("appVersionCode") as String?)?.toIntOrNull()
+val ciVersionName = project.findProperty("appVersionName") as String?
+
 android {
-    namespace = "com.mangocodex"
-    compileSdk = 35
+    namespace = appPackage
+    compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.mangocodex"
+        applicationId = appPackage
         minSdk = 26
-        targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        targetSdk = 36
+        versionCode = ciVersionCode ?: 1
+        versionName = ciVersionName ?: error("appVersionName must be set via -PappVersionName")
+        resValue("string", "app_name", appName)
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            signingConfig = signingConfigs.create("release") {
+                storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
         }
     }
 
@@ -27,12 +55,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
+        resValues = true
     }
 }
 

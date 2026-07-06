@@ -61,7 +61,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
             TopAppBar(
                 title = {
                     Text(
-                        text = (currentUri?.path?.substringAfterLast("/") ?: "New file") + (isDirty ? "•" : ""),
+                        text = (currentUri?.path?.substringAfterLast("/") ?: "New file") + (if (isDirty) "•" else ""),
                         color = FG,
                         fontFamily = FontFamily.Monospace
                     )

@@ -61,7 +61,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
             TopAppBar(
                 title = {
                     Text(
-                        text = if (isDirty) "MangoCodex •" else currentUri?.path.substringAfterLast("/") ?: "New file",
+                        text = if (isDirty) "MangoCodex •" else currentUri?.path?.substringAfterLast("/") ?: "New file",
                         color = FG,
                         fontFamily = FontFamily.Monospace
                     )

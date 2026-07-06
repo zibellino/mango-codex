@@ -51,7 +51,7 @@ class EditorViewModel : ViewModel() {
         rehighlight()
     }
 
-    fun getCurrentPath(context: Context) = _currentFileUri.value.getPath().orEmpty()
+    fun getCurrentPath(context: Context) = _currentFileUri.value.getPath() ?: ""
 
     fun reloadPatterns(context: Context) = loadPatterns(context)
 

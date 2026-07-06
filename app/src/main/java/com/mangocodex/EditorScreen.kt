@@ -61,7 +61,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
             TopAppBar(
                 title = {
                     Text(
-                        text = if (isDirty) "MangoCodex •" else "MangoCodex",
+                        text = if (isDirty) "MangoCodex •" else currentUri?.path ?: "New file",
                         color = FG,
                         fontFamily = FontFamily.Monospace
                     )

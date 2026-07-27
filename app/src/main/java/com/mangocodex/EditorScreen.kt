@@ -63,7 +63,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
     ) { uri: Uri? -> uri?.let { viewModel.openFile(context, it) } }
 
     val saveLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("text/plain")
+        ActivityResultContracts.CreateDocument("*/*")
     ) { uri: Uri? -> uri?.let { viewModel.saveAs(context, it) } }
 
     Scaffold(

@@ -252,6 +252,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         val result = layoutResult ?: return@Canvas
                         val text = fieldValue.text
                         val gutterPaddingEndPx = 8.dp.toPx()
+                        val lineHeightPx = with(density) { 20.sp.toPx() }
                         var logicalLine = 1
                         var offset = 0
                         while (true) {
@@ -259,7 +260,15 @@ fun EditorScreen(viewModel: EditorViewModel) {
                             val visualLine = result.getLineForOffset(clampedOffset)
                             val label = textMeasurer.measure(logicalLine.toString(), gutterTextStyle)
                             val x = gutterWidth.toPx() - gutterPaddingEndPx - label.size.width
-                            val y = result.getLineTop(visualLine)
+                            val y = if (visualLine == 0) {
+                                if (result.lineCount > 1) {
+                                    result.getLineTop(1) - lineHeightPx
+                                } else {
+                                    result.getLineTop(0)
+                                }
+                            } else {
+                                result.getLineTop(visualLine)
+                            }
                             drawText(label, topLeft = Offset(x, y))
 
                             val nextNewline = text.indexOf('\n', clampedOffset)

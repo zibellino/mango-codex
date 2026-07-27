@@ -62,6 +62,13 @@ class EditorViewModel : ViewModel() {
         _wrapLines.value = !_wrapLines.value
     }
 
+    fun newFile() {
+        _currentFileUri.value = null
+        isPatternFile = false
+        setText("")
+        _isDirty.value = false
+    }
+
     fun openFile(context: Context, uri: Uri) {
         val text = context.contentResolver.openInputStream(uri)
             ?.bufferedReader()?.readText() ?: return

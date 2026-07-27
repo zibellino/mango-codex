@@ -45,15 +45,25 @@ fun EditorScreen(viewModel: EditorViewModel) {
     val isDirty by viewModel.isDirty.collectAsState()
     val currentUri by viewModel.currentFileUri.collectAsState()
     val wrapLines by viewModel.wrapLines.collectAsState()
+    val isPatternFile by viewModel.isPatternFile.collectAsState()
 
     var showMenu by remember { mutableStateOf(false) }
+    var pendingDiscardAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    fun runOrConfirmDiscard(action: () -> Unit) {
+        if (isDirty) {
+            pendingDiscardAction = action
+        } else {
+            action()
+        }
+    }
 
     val openLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri: Uri? -> uri?.let { viewModel.openFile(context, it) } }
 
     val saveLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("text/plain")
+        ActivityResultContracts.CreateDocument("*/*")
     ) { uri: Uri? -> uri?.let { viewModel.saveAs(context, it) } }
 
     Scaffold(
@@ -77,16 +87,27 @@ fun EditorScreen(viewModel: EditorViewModel) {
                             onDismissRequest = { showMenu = false }
                         ) {
                             DropdownMenuItem(
+                                text = { Text("New file") },
+                                onClick = {
+                                    runOrConfirmDiscard { viewModel.newFile() }
+                                    showMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Open file") },
                                 onClick = {
-                                    openLauncher.launch(arrayOf("*/*"))
+                                    runOrConfirmDiscard { openLauncher.launch(arrayOf("*/*")) }
                                     showMenu = false
                                 }
                             )
                             DropdownMenuItem(
                                 text = { Text("Save") },
                                 onClick = {
-                                    viewModel.saveFile(context)
+                                    if (currentUri == null && !isPatternFile) {
+                                        saveLauncher.launch("untitled.txt")
+                                    } else {
+                                        viewModel.saveFile(context)
+                                    }
                                     showMenu = false
                                 }
                             )
@@ -101,7 +122,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                             DropdownMenuItem(
                                 text = { Text("Edit patterns") },
                                 onClick = {
-                                    viewModel.openInternalPatterns(context)
+                                    runOrConfirmDiscard { viewModel.openInternalPatterns(context) }
                                     showMenu = false
                                 }
                             )
@@ -127,6 +148,26 @@ fun EditorScreen(viewModel: EditorViewModel) {
         },
         containerColor = BG
     ) { padding ->
+        pendingDiscardAction?.let { action ->
+            AlertDialog(
+                onDismissRequest = { pendingDiscardAction = null },
+                title = { Text("Discard changes?") },
+                text = { Text("You have unsaved changes. Discarding them cannot be undone.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        pendingDiscardAction = null
+                        action()
+                    }) {
+                        Text("Discard")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingDiscardAction = null }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
         val displayValue = remember(fieldValue, highlighted) {
             fieldValue.copy(annotatedString = highlighted)
         }

@@ -3,6 +3,7 @@ package com.mangocodex
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.BringIntoViewSpec
@@ -25,8 +26,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,6 +49,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
     val currentUri by viewModel.currentFileUri.collectAsState()
     val wrapLines by viewModel.wrapLines.collectAsState()
     val isPatternFile by viewModel.isPatternFile.collectAsState()
+    val showLineNumbers by viewModel.showLineNumbers.collectAsState()
 
     var showMenu by remember { mutableStateOf(false) }
     var pendingDiscardAction by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -141,6 +145,13 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                     showMenu = false
                                 }
                             )
+                            DropdownMenuItem(
+                                text = { Text(if (showLineNumbers) "✓ Line numbers" else "Line numbers") },
+                                onClick = {
+                                    viewModel.toggleLineNumbers()
+                                    showMenu = false
+                                }
+                            )
                         }
                     }
                 }
@@ -173,10 +184,26 @@ fun EditorScreen(viewModel: EditorViewModel) {
         }
 
         val density = LocalDensity.current
+        val textMeasurer = rememberTextMeasurer()
         val scrollState = rememberScrollState()
         val horizontalScrollState = rememberScrollState()
         var viewportSize by remember { mutableStateOf(IntSize.Zero) }
         var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+
+        val gutterTextStyle = TextStyle(
+            color = FG.copy(alpha = 0.4f),
+            fontFamily = FontFamily.Monospace,
+            fontSize = 13.sp,
+            lineHeight = 20.sp
+        )
+
+        val lineCount = remember(fieldValue.text) { fieldValue.text.count { it == '\n' } + 1 }
+
+        val gutterWidth = remember(lineCount, density) {
+            val digits = lineCount.toString().length
+            val measured = textMeasurer.measure("0".repeat(digits), gutterTextStyle)
+            with(density) { measured.size.width.toDp() + 16.dp }
+        }
 
         LaunchedEffect(wrapLines) {
             horizontalScrollState.scrollTo(0)
@@ -197,39 +224,85 @@ fun EditorScreen(viewModel: EditorViewModel) {
             focusRequester.requestFocus()
         }
 
-        Box(
+        // Content (document) height in dp, used to size the gutter so it scrolls
+        // in lockstep with the text field instead of being clipped to the viewport.
+        val contentHeight = with(density) { (layoutResult?.size?.height ?: 0).toDp() }
+
+        Row(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .background(BG)
-                .onSizeChanged { viewportSize = it }
-                .verticalScroll(scrollState)
-                .let { if (wrapLines) it else it.horizontalScroll(horizontalScrollState) }
         ) {
-            CompositionLocalProvider(LocalBringIntoViewSpec provides noOpBringIntoView) {
-                BasicTextField(
-                    value = displayValue,
-                    onValueChange = { viewModel.onValueChange(it) },
-                    onTextLayout = { layoutResult = it },
-                    textStyle = TextStyle(
-                        color = FG,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp,
-                        lineHeight = 20.sp
-                    ),
-                    cursorBrush = SolidColor(FG),
+            if (showLineNumbers) {
+                // Own vertical scroll (shared ScrollState) but no horizontal scroll,
+                // so the gutter stays pinned to the left edge when the text scrolls sideways.
+                Box(
                     modifier = Modifier
-                        .let {
-                            if (wrapLines) {
-                                it.fillMaxSize()
-                            } else {
-                                val minWidth = with(density) { viewportSize.width.toDp() }
-                                it.fillMaxHeight().widthIn(min = minWidth)
-                            }
+                        .width(gutterWidth)
+                        .fillMaxHeight()
+                        .verticalScroll(scrollState)
+                ) {
+                    Canvas(
+                        modifier = Modifier
+                            .width(gutterWidth)
+                            .height(contentHeight)
+                            .padding(top = 4.dp)
+                    ) {
+                        val result = layoutResult ?: return@Canvas
+                        val text = fieldValue.text
+                        val gutterPaddingEndPx = 8.dp.toPx()
+                        var logicalLine = 1
+                        var offset = 0
+                        while (true) {
+                            val clampedOffset = offset.coerceIn(0, text.length)
+                            val visualLine = result.getLineForOffset(clampedOffset)
+                            val label = textMeasurer.measure(logicalLine.toString(), gutterTextStyle)
+                            val x = gutterWidth.toPx() - gutterPaddingEndPx - label.size.width
+                            val y = result.getLineTop(visualLine)
+                            drawText(label, topLeft = Offset(x, y))
+
+                            val nextNewline = text.indexOf('\n', clampedOffset)
+                            if (nextNewline == -1) break
+                            offset = nextNewline + 1
+                            logicalLine++
                         }
-                        .focusRequester(focusRequester)
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                )
+                    }
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onSizeChanged { viewportSize = it }
+                    .verticalScroll(scrollState)
+                    .let { if (wrapLines) it else it.horizontalScroll(horizontalScrollState) }
+            ) {
+                CompositionLocalProvider(LocalBringIntoViewSpec provides noOpBringIntoView) {
+                    BasicTextField(
+                        value = displayValue,
+                        onValueChange = { viewModel.onValueChange(it) },
+                        onTextLayout = { layoutResult = it },
+                        textStyle = TextStyle(
+                            color = FG,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 13.sp,
+                            lineHeight = 20.sp
+                        ),
+                        cursorBrush = SolidColor(FG),
+                        modifier = Modifier
+                            .let {
+                                if (wrapLines) {
+                                    it.fillMaxSize()
+                                } else {
+                                    val minWidth = with(density) { viewportSize.width.toDp() }
+                                    it.fillMaxHeight().widthIn(min = minWidth)
+                                }
+                            }
+                            .focusRequester(focusRequester)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
             }
         }
 

@@ -35,6 +35,9 @@ class EditorViewModel : ViewModel() {
     private val _wrapLines = MutableStateFlow(true)
     val wrapLines: StateFlow<Boolean> = _wrapLines
 
+    private val _showLineNumbers = MutableStateFlow(true)
+    val showLineNumbers: StateFlow<Boolean> = _showLineNumbers
+
     private val _isPatternFile = MutableStateFlow(false)
     val isPatternFile: StateFlow<Boolean> = _isPatternFile
 
@@ -61,6 +64,10 @@ class EditorViewModel : ViewModel() {
 
     fun toggleWrapLines() {
         _wrapLines.value = !_wrapLines.value
+    }
+
+    fun toggleLineNumbers() {
+        _showLineNumbers.value = !_showLineNumbers.value
     }
 
     fun newFile() {

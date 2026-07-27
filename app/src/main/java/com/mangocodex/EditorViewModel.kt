@@ -35,7 +35,8 @@ class EditorViewModel : ViewModel() {
     private val _wrapLines = MutableStateFlow(true)
     val wrapLines: StateFlow<Boolean> = _wrapLines
 
-    private var isPatternFile = false
+    private val _isPatternFile = MutableStateFlow(false)
+    val isPatternFile: StateFlow<Boolean> = _isPatternFile
 
     private var styledRange: IntRange = 0..0
 
@@ -64,7 +65,7 @@ class EditorViewModel : ViewModel() {
 
     fun newFile() {
         _currentFileUri.value = null
-        isPatternFile = false
+        _isPatternFile.value = false
         setText("")
         _isDirty.value = false
     }
@@ -73,7 +74,7 @@ class EditorViewModel : ViewModel() {
         val text = context.contentResolver.openInputStream(uri)
             ?.bufferedReader()?.readText() ?: return
         _currentFileUri.value = uri
-        isPatternFile = false
+        _isPatternFile.value = false
         setText(text)
         _isDirty.value = false
     }
@@ -87,13 +88,13 @@ class EditorViewModel : ViewModel() {
             }
         }
         _currentFileUri.value = null
-        isPatternFile = true
+        _isPatternFile.value = true
         setText(file.readText())
         _isDirty.value = false
     }
 
     fun saveFile(context: Context, uri: Uri? = _currentFileUri.value) {
-        if (isPatternFile) { saveInternalPatterns(context); return }
+        if (_isPatternFile.value) { saveInternalPatterns(context); return }
         uri ?: return
         context.contentResolver.openOutputStream(uri, "wt")?.writer()?.use {
             it.write(_fieldValue.value.text)
@@ -106,7 +107,7 @@ class EditorViewModel : ViewModel() {
             it.write(_fieldValue.value.text)
         }
         _currentFileUri.value = uri
-        isPatternFile = false
+        _isPatternFile.value = false
         _isDirty.value = false
     }
 

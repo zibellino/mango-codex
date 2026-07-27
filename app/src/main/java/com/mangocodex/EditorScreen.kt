@@ -45,6 +45,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
     val isDirty by viewModel.isDirty.collectAsState()
     val currentUri by viewModel.currentFileUri.collectAsState()
     val wrapLines by viewModel.wrapLines.collectAsState()
+    val isPatternFile by viewModel.isPatternFile.collectAsState()
 
     var showMenu by remember { mutableStateOf(false) }
     var pendingDiscardAction by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -102,7 +103,11 @@ fun EditorScreen(viewModel: EditorViewModel) {
                             DropdownMenuItem(
                                 text = { Text("Save") },
                                 onClick = {
-                                    viewModel.saveFile(context)
+                                    if (currentUri == null && !isPatternFile) {
+                                        saveLauncher.launch("untitled.txt")
+                                    } else {
+                                        viewModel.saveFile(context)
+                                    }
                                     showMenu = false
                                 }
                             )

@@ -3,7 +3,6 @@ package com.mangocodex
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.BringIntoViewSpec
@@ -26,10 +25,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -224,10 +223,6 @@ fun EditorScreen(viewModel: EditorViewModel) {
             focusRequester.requestFocus()
         }
 
-        // Content (document) height in dp, used to size the gutter so it scrolls
-        // in lockstep with the text field instead of being clipped to the viewport.
-        val contentHeight = with(density) { (layoutResult?.size?.height ?: 0).toDp() }
-
         Row(
             modifier = Modifier
                 .fillMaxSize()
@@ -235,6 +230,31 @@ fun EditorScreen(viewModel: EditorViewModel) {
                 .background(BG)
         ) {
             if (showLineNumbers) {
+                val lineNumbersText = remember(layoutResult, fieldValue.text) {
+                    val result = layoutResult
+                    if (result == null || result.lineCount == 0) {
+                        ""
+                    } else {
+                        val text = fieldValue.text
+                        // Map each visual (wrapped) line to the logical line number that starts there.
+                        val startsAtVisualLine = HashMap<Int, Int>()
+                        var logical = 1
+                        var offset = 0
+                        while (true) {
+                            val clamped = offset.coerceIn(0, text.length)
+                            val visualLine = result.getLineForOffset(clamped)
+                            startsAtVisualLine[visualLine] = logical
+                            val nextNewline = text.indexOf('\n', clamped)
+                            if (nextNewline == -1) break
+                            offset = nextNewline + 1
+                            logical++
+                        }
+                        (0 until result.lineCount).joinToString("\n") { visualLine ->
+                            startsAtVisualLine[visualLine]?.toString() ?: ""
+                        }
+                    }
+                }
+
                 // Own vertical scroll (shared ScrollState) but no horizontal scroll,
                 // so the gutter stays pinned to the left edge when the text scrolls sideways.
                 Box(
@@ -243,40 +263,17 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         .fillMaxHeight()
                         .verticalScroll(scrollState)
                 ) {
-                    Canvas(
+                    Text(
+                        text = lineNumbersText,
+                        color = FG.copy(alpha = 0.4f),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        textAlign = TextAlign.End,
                         modifier = Modifier
-                            .padding(top = 4.dp)
-                            .width(gutterWidth)
-                            .height(contentHeight)
-                    ) {
-                        val result = layoutResult ?: return@Canvas
-                        val text = fieldValue.text
-                        val gutterPaddingEndPx = 8.dp.toPx()
-                        val lineHeightPx = with(density) { 20.sp.toPx() }
-                        var logicalLine = 1
-                        var offset = 0
-                        while (true) {
-                            val clampedOffset = offset.coerceIn(0, text.length)
-                            val visualLine = result.getLineForOffset(clampedOffset)
-                            val label = textMeasurer.measure(logicalLine.toString(), gutterTextStyle)
-                            val x = gutterWidth.toPx() - gutterPaddingEndPx - label.size.width
-                            val y = if (visualLine == 0) {
-                                if (result.lineCount > 1) {
-                                    result.getLineTop(1) - lineHeightPx
-                                } else {
-                                    result.getLineTop(0)
-                                }
-                            } else {
-                                result.getLineTop(visualLine)
-                            }
-                            drawText(label, topLeft = Offset(x, y))
-
-                            val nextNewline = text.indexOf('\n', clampedOffset)
-                            if (nextNewline == -1) break
-                            offset = nextNewline + 1
-                            logicalLine++
-                        }
-                    }
+                            .fillMaxWidth()
+                            .padding(end = 8.dp, top = 4.dp, bottom = 4.dp)
+                    )
                 }
             }
 

@@ -245,9 +245,9 @@ fun EditorScreen(viewModel: EditorViewModel) {
                 ) {
                     Canvas(
                         modifier = Modifier
+                            .padding(top = 4.dp)
                             .width(gutterWidth)
                             .height(contentHeight)
-                            .padding(top = 4.dp)
                     ) {
                         val result = layoutResult ?: return@Canvas
                         val text = fieldValue.text

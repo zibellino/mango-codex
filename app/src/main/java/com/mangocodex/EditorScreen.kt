@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -27,6 +28,8 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,6 +49,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
     val currentUri by viewModel.currentFileUri.collectAsState()
     val wrapLines by viewModel.wrapLines.collectAsState()
     val isPatternFile by viewModel.isPatternFile.collectAsState()
+    val showLineNumbers by viewModel.showLineNumbers.collectAsState()
 
     var showMenu by remember { mutableStateOf(false) }
     var pendingDiscardAction by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -141,6 +145,13 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                     showMenu = false
                                 }
                             )
+                            DropdownMenuItem(
+                                text = { Text(if (showLineNumbers) "✓ Line numbers" else "Line numbers") },
+                                onClick = {
+                                    viewModel.toggleLineNumbers()
+                                    showMenu = false
+                                }
+                            )
                         }
                     }
                 }
@@ -173,10 +184,26 @@ fun EditorScreen(viewModel: EditorViewModel) {
         }
 
         val density = LocalDensity.current
+        val textMeasurer = rememberTextMeasurer()
         val scrollState = rememberScrollState()
         val horizontalScrollState = rememberScrollState()
         var viewportSize by remember { mutableStateOf(IntSize.Zero) }
         var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+
+        val gutterTextStyle = TextStyle(
+            color = FG.copy(alpha = 0.4f),
+            fontFamily = FontFamily.Monospace,
+            fontSize = 13.sp,
+            lineHeight = 20.sp
+        )
+
+        val lineCount = remember(fieldValue.text) { fieldValue.text.count { it == '\n' } + 1 }
+
+        val gutterWidth = remember(lineCount, density) {
+            val digits = lineCount.toString().length
+            val measured = textMeasurer.measure("0".repeat(digits), gutterTextStyle)
+            with(density) { measured.size.width.toDp() + 8.dp }
+        }
 
         LaunchedEffect(wrapLines) {
             horizontalScrollState.scrollTo(0)
@@ -197,39 +224,102 @@ fun EditorScreen(viewModel: EditorViewModel) {
             focusRequester.requestFocus()
         }
 
-        Box(
+        Row(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .background(BG)
-                .onSizeChanged { viewportSize = it }
-                .verticalScroll(scrollState)
-                .let { if (wrapLines) it else it.horizontalScroll(horizontalScrollState) }
         ) {
-            CompositionLocalProvider(LocalBringIntoViewSpec provides noOpBringIntoView) {
-                BasicTextField(
-                    value = displayValue,
-                    onValueChange = { viewModel.onValueChange(it) },
-                    onTextLayout = { layoutResult = it },
-                    textStyle = TextStyle(
-                        color = FG,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp,
-                        lineHeight = 20.sp
-                    ),
-                    cursorBrush = SolidColor(FG),
-                    modifier = Modifier
-                        .let {
-                            if (wrapLines) {
-                                it.fillMaxSize()
-                            } else {
-                                val minWidth = with(density) { viewportSize.width.toDp() }
-                                it.fillMaxHeight().widthIn(min = minWidth)
-                            }
+            if (showLineNumbers) {
+                val lineNumbersText = remember(layoutResult, fieldValue.text) {
+                    val result = layoutResult
+                    if (result == null || result.lineCount == 0) {
+                        ""
+                    } else {
+                        val text = fieldValue.text
+                        // Map each visual (wrapped) line to the logical line number that starts there.
+                        val startsAtVisualLine = HashMap<Int, Int>()
+                        var logical = 1
+                        var offset = 0
+                        while (true) {
+                            val clamped = offset.coerceIn(0, text.length)
+                            val visualLine = result.getLineForOffset(clamped)
+                            startsAtVisualLine[visualLine] = logical
+                            val nextNewline = text.indexOf('\n', clamped)
+                            if (nextNewline == -1) break
+                            offset = nextNewline + 1
+                            logical++
                         }
-                        .focusRequester(focusRequester)
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        (0 until result.lineCount).joinToString("\n") { visualLine ->
+                            startsAtVisualLine[visualLine]?.toString() ?: ""
+                        }
+                    }
+                }
+
+                // Own vertical scroll (shared ScrollState) but no horizontal scroll,
+                // so the gutter stays pinned to the left edge when the text scrolls sideways.
+                Box(
+                    modifier = Modifier
+                        .width(gutterWidth)
+                        .fillMaxHeight()
+                        .verticalScroll(scrollState)
+                ) {
+                    BasicText(
+                        text = lineNumbersText,
+                        style = TextStyle(
+                            color = FG.copy(alpha = 0.4f),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 13.sp,
+                            lineHeight = 20.sp,
+                            textAlign = TextAlign.End
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(end = 4.dp, top = 4.dp, bottom = 4.dp)
+                    )
+                }
+
+                // 1px divider between the line-number gutter and the text.
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(0.5.dp)
+                        .background(Color(0xFF3C3C3C))
                 )
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onSizeChanged { viewportSize = it }
+                    .verticalScroll(scrollState)
+                    .let { if (wrapLines) it else it.horizontalScroll(horizontalScrollState) }
+            ) {
+                CompositionLocalProvider(LocalBringIntoViewSpec provides noOpBringIntoView) {
+                    BasicTextField(
+                        value = displayValue,
+                        onValueChange = { viewModel.onValueChange(it) },
+                        onTextLayout = { layoutResult = it },
+                        textStyle = TextStyle(
+                            color = FG,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 13.sp,
+                            lineHeight = 20.sp
+                        ),
+                        cursorBrush = SolidColor(FG),
+                        modifier = Modifier
+                            .let {
+                                if (wrapLines) {
+                                    it.fillMaxSize()
+                                } else {
+                                    val minWidth = with(density) { viewportSize.width.toDp() }
+                                    it.fillMaxHeight().widthIn(min = minWidth)
+                                }
+                            }
+                            .focusRequester(focusRequester)
+                            .padding(start = 4.dp, top = 4.dp, end = 8.dp, bottom = 4.dp)
+                    )
+                }
             }
         }
 

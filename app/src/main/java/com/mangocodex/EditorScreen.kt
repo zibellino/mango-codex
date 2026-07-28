@@ -202,7 +202,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
         val gutterWidth = remember(lineCount, density) {
             val digits = lineCount.toString().length
             val measured = textMeasurer.measure("0".repeat(digits), gutterTextStyle)
-            with(density) { measured.size.width.toDp() + 16.dp }
+            with(density) { measured.size.width.toDp() + 8.dp }
         }
 
         LaunchedEffect(wrapLines) {
@@ -275,9 +275,17 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(end = 8.dp, top = 4.dp, bottom = 4.dp)
+                            .padding(end = 4.dp, top = 4.dp, bottom = 4.dp)
                     )
                 }
+
+                // 1px divider between the line-number gutter and the text.
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(1.dp)
+                        .background(Color(0xFF3C3C3C))
+                )
             }
 
             Box(

@@ -283,7 +283,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                 Box(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .width(1.dp)
+                        .width(0.5.dp)
                         .background(Color(0xFF3C3C3C))
                 )
             }
@@ -317,7 +317,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                 }
                             }
                             .focusRequester(focusRequester)
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .padding(start = 4.dp, top = 4.dp, end = 8.dp, bottom = 4.dp)
                     )
                 }
             }

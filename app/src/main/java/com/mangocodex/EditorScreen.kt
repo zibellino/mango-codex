@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -263,13 +264,15 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         .fillMaxHeight()
                         .verticalScroll(scrollState)
                 ) {
-                    Text(
+                    BasicText(
                         text = lineNumbersText,
-                        color = FG.copy(alpha = 0.4f),
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp,
-                        lineHeight = 20.sp,
-                        textAlign = TextAlign.End,
+                        style = TextStyle(
+                            color = FG.copy(alpha = 0.4f),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 13.sp,
+                            lineHeight = 20.sp,
+                            textAlign = TextAlign.End
+                        ),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(end = 8.dp, top = 4.dp, bottom = 4.dp)

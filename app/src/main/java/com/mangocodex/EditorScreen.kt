@@ -47,6 +47,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
     val highlighted by viewModel.highlighted.collectAsState()
     val isDirty by viewModel.isDirty.collectAsState()
     val currentUri by viewModel.currentFileUri.collectAsState()
+    val currentFileName by viewModel.currentFileName.collectAsState()
     val wrapLines by viewModel.wrapLines.collectAsState()
     val isPatternFile by viewModel.isPatternFile.collectAsState()
     val showLineNumbers by viewModel.showLineNumbers.collectAsState()
@@ -75,7 +76,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
             TopAppBar(
                 title = {
                     Text(
-                        text = (currentUri?.path?.substringAfterLast("/") ?: "New file") + (if (isDirty) "•" else ""),
+                        text = (currentFileName ?: "New file") + (if (isDirty) "•" else ""),
                         color = FG,
                         fontFamily = FontFamily.Monospace
                     )

@@ -2,6 +2,7 @@ package com.mangocodex
 
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -28,6 +29,9 @@ class EditorViewModel : ViewModel() {
 
     private val _currentFileUri = MutableStateFlow<Uri?>(null)
     val currentFileUri: StateFlow<Uri?> = _currentFileUri
+
+    private val _currentFileName = MutableStateFlow<String?>(null)
+    val currentFileName: StateFlow<String?> = _currentFileName
 
     private val _isDirty = MutableStateFlow(false)
     val isDirty: StateFlow<Boolean> = _isDirty
@@ -72,6 +76,7 @@ class EditorViewModel : ViewModel() {
 
     fun newFile() {
         _currentFileUri.value = null
+        _currentFileName.value = null
         _isPatternFile.value = false
         setText("")
         _isDirty.value = false
@@ -81,6 +86,7 @@ class EditorViewModel : ViewModel() {
         val text = context.contentResolver.openInputStream(uri)
             ?.bufferedReader()?.readText() ?: return
         _currentFileUri.value = uri
+        _currentFileName.value = queryDisplayName(context, uri)
         _isPatternFile.value = false
         setText(text)
         _isDirty.value = false
@@ -95,9 +101,33 @@ class EditorViewModel : ViewModel() {
             }
         }
         _currentFileUri.value = null
+        _currentFileName.value = null
         _isPatternFile.value = true
         setText(file.readText())
         _isDirty.value = false
+    }
+
+    /**
+     * Resolves the human-readable display name for a content:// URI via the
+     * ContentResolver, instead of relying on Uri.path (which for providers like
+     * the MediaStore-backed document provider returns an opaque document ID such
+     * as "msf:123456789" rather than a real filename).
+     */
+    private fun queryDisplayName(context: Context, uri: Uri): String? {
+        if (uri.scheme != "content") {
+            return uri.path?.substringAfterLast("/")
+        }
+        return try {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (idx >= 0) cursor.getString(idx) else null
+                    } else null
+                }
+        } catch (e: Exception) {
+            null
+        }
     }
 
     fun saveFile(context: Context, uri: Uri? = _currentFileUri.value) {
@@ -114,6 +144,7 @@ class EditorViewModel : ViewModel() {
             it.write(_fieldValue.value.text)
         }
         _currentFileUri.value = uri
+        _currentFileName.value = queryDisplayName(context, uri)
         _isPatternFile.value = false
         _isDirty.value = false
     }

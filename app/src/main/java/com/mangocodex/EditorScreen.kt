@@ -316,10 +316,8 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         state = viewModel.state,
                         onTextLayout = { layoutResultProvider ->
                             val newResult = layoutResultProvider()
-                            val currentResult = layoutResult
-                            if (currentResult == null || 
-                                currentResult.lineCount != newResult.lineCount || 
-                                currentResult.size != newResult.size) {
+                            val prev = layoutResult
+                            if (prev == null || prev.lineCount != newResult.lineCount || prev.size != newResult.size) {
                                 layoutResult = newResult
                             }
                         },
@@ -352,16 +350,14 @@ fun EditorScreen(viewModel: EditorViewModel) {
                 .distinctUntilChanged()
                 .debounce(120)
                 .collect { (scrollOffset, viewportHeight, result) ->
-                    if (viewportHeight == 0) return@collect
-                    result?.let { nonNullResult ->
-                        if (nonNullResult.lineCount == 0) return@let
-                        val top = scrollOffset.toFloat().coerceAtLeast(0f)
-                        val bottom = (scrollOffset + viewportHeight).toFloat()
-                            .coerceAtMost(nonNullResult.size.height.toFloat())
-                        val startOffset = nonNullResult.getOffsetForPosition(Offset(0f, top))
-                        val endOffset = nonNullResult.getOffsetForPosition(Offset(0f, bottom))
-                        viewModel.updateVisibleRange(startOffset, endOffset)
-                    }
+                    if (viewportHeight == 0 || result == null) return@collect
+                    if (result.lineCount == 0) return@collect
+                    val top = scrollOffset.toFloat().coerceAtLeast(0f)
+                    val bottom = (scrollOffset + viewportHeight).toFloat()
+                        .coerceAtMost(result.size.height.toFloat())
+                    val startOffset = result.getOffsetForPosition(Offset(0f, top))
+                    val endOffset = result.getOffsetForPosition(Offset(0f, bottom))
+                    viewModel.updateVisibleRange(startOffset, endOffset)
                 }
         }
     }

@@ -200,7 +200,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
         val scrollState = rememberScrollState()
         val horizontalScrollState = rememberScrollState()
         var viewportSize by remember { mutableStateOf(IntSize.Zero) }
-        var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+        val layoutResultState = remember { mutableStateOf<TextLayoutResult?>(null) }
 
         val gutterTextStyle = TextStyle(
             color = FG.copy(alpha = 0.4f),
@@ -244,7 +244,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
 
         val lineNumbersText by remember(rawText) {
             derivedStateOf {
-                val currentLayout = layoutResult
+                val currentLayout = layoutResultState.value
                 if (currentLayout == null || currentLayout.lineCount == 0) {
                     ""
                 } else {
@@ -316,9 +316,9 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         state = viewModel.state,
                         onTextLayout = { layoutResultProvider ->
                             val newResult = layoutResultProvider()
-                            val prev = layoutResult
+                            val prev = layoutResultState.value
                             if (prev == null || prev.lineCount != newResult.lineCount || prev.size != newResult.size) {
-                                layoutResult = newResult
+                                layoutResultState.value = newResult
                             }
                         },
                         outputTransformation = syntaxHighlightTransformation,
@@ -346,17 +346,16 @@ fun EditorScreen(viewModel: EditorViewModel) {
         }
 
         LaunchedEffect(scrollState) {
-            snapshotFlow { Triple(scrollState.value, viewportSize.height, layoutResult) }
+            snapshotFlow { Triple(scrollState.value, viewportSize.height, layoutResultState.value) }
                 .distinctUntilChanged()
                 .debounce(120)
-                .collect { (scrollOffset, viewportHeight, result) ->
-                    if (viewportHeight == 0 || result == null) return@collect
-                    if (result.lineCount == 0) return@collect
+                .collect { (scrollOffset, viewportHeight, layout) ->
+                    if (viewportHeight == 0 || layout == null || layout.lineCount == 0) return@collect
                     val top = scrollOffset.toFloat().coerceAtLeast(0f)
                     val bottom = (scrollOffset + viewportHeight).toFloat()
-                        .coerceAtMost(result.size.height.toFloat())
-                    val startOffset = result.getOffsetForPosition(Offset(0f, top))
-                    val endOffset = result.getOffsetForPosition(Offset(0f, bottom))
+                        .coerceAtMost(layout.size.height.toFloat())
+                    val startOffset = layout.getOffsetForPosition(Offset(0f, top))
+                    val endOffset = layout.getOffsetForPosition(Offset(0f, bottom))
                     viewModel.updateVisibleRange(startOffset, endOffset)
                 }
         }

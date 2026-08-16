@@ -244,23 +244,24 @@ fun EditorScreen(viewModel: EditorViewModel) {
 
         val lineNumbersText by remember(rawText) {
             derivedStateOf {
-                val result = layoutResult
-                if (result == null || result.lineCount == 0) {
+                val currentLayout = layoutResult
+                if (currentLayout == null || currentLayout.lineCount == 0) {
                     ""
                 } else {
+                    val totalLines = currentLayout.lineCount
                     val startsAtVisualLine = HashMap<Int, Int>()
                     var logical = 1
                     var offset = 0
                     while (true) {
                         val clamped = offset.coerceIn(0, rawText.length)
-                        val visualLine = result.getLineForOffset(clamped)
+                        val visualLine = currentLayout.getLineForOffset(clamped)
                         startsAtVisualLine[visualLine] = logical
                         val nextNewline = rawText.indexOf('\n', clamped)
                         if (nextNewline == -1) break
                         offset = nextNewline + 1
                         logical++
                     }
-                    (0 until result.lineCount).joinToString("\n") { visualLine ->
+                    (0 until totalLines).joinToString("\n") { visualLine ->
                         startsAtVisualLine[visualLine]?.toString() ?: ""
                     }
                 }

@@ -331,7 +331,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         ),
                         cursorBrush = SolidColor(FG),
                         modifier = Modifier
-                            .graphicsLayer() // Isolates cursor draw invalidation to a dedicated layer
+                            .graphicsLayer()
                             .let {
                                 if (wrapLines) {
                                     it.fillMaxSize()

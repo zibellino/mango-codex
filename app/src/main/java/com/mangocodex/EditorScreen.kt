@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.LocalCursorBlinkEnabled
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalCursorBlinkEnabled
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
@@ -232,9 +232,9 @@ fun EditorScreen(viewModel: EditorViewModel) {
 
         // Cursor blink triggers a redraw of the whole field while focused. On a
         // large un-virtualized document that's expensive enough to cause visible
-        // stutter during fling deceleration. LocalCursorBlinkEnabled (Foundation
-        // 1.8+) lets us suppress just the blink for the duration of a scroll,
-        // without touching focus/IME state at all.
+        // stutter during fling deceleration. LocalCursorBlinkEnabled (from
+        // androidx.compose.ui:ui, not foundation) lets us suppress just the
+        // blink for the duration of a scroll, without touching focus/IME state.
         var cursorBlinkEnabled by remember { mutableStateOf(true) }
         LaunchedEffect(scrollState) {
             snapshotFlow { scrollState.isScrollInProgress }

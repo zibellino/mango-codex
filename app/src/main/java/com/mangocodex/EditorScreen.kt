@@ -315,8 +315,10 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         state = viewModel.state,
                         onTextLayout = { layoutResultProvider ->
                             val newResult = layoutResultProvider()
-                            if (layoutResult?.lineCount != newResult.lineCount || 
-                                layoutResult?.size != newResult.size) {
+                            val currentResult = layoutResult
+                            if (currentResult == null || 
+                                currentResult.lineCount != newResult.lineCount || 
+                                currentResult.size != newResult.size) {
                                 layoutResult = newResult
                             }
                         },

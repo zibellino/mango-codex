@@ -317,7 +317,12 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         onTextLayout = { layoutResultProvider ->
                             val newResult = layoutResultProvider()
                             val prev = layoutResultState.value
-                            if (prev == null || prev.lineCount != newResult.lineCount || prev.size != newResult.size) {
+                            val shouldUpdate = when {
+                                prev == null -> true
+                                newResult == null -> false
+                                else -> prev.lineCount != newResult.lineCount || prev.size != newResult.size
+                            }
+                            if (shouldUpdate) {
                                 layoutResultState.value = newResult
                             }
                         },
@@ -350,7 +355,8 @@ fun EditorScreen(viewModel: EditorViewModel) {
                 .distinctUntilChanged()
                 .debounce(120)
                 .collect { (scrollOffset, viewportHeight, layout) ->
-                    if (viewportHeight == 0 || layout == null || layout.lineCount == 0) return@collect
+                    if (viewportHeight == 0 || layout == null) return@collect
+                    if (layout.lineCount == 0) return@collect
                     val top = scrollOffset.toFloat().coerceAtLeast(0f)
                     val bottom = (scrollOffset + viewportHeight).toFloat()
                         .coerceAtMost(layout.size.height.toFloat())

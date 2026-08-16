@@ -1,56 +1,39 @@
 package com.mangocodex
 
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.BringIntoViewSpec
-import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextLayoutResult
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.distinctUntilChanged
+import androidx.compose.ui.viewinterop.AndroidView
 
 val BG = Color(0xFF1E1E1E)
 val FG = Color(0xFFD4D4D4)
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(viewModel: EditorViewModel) {
     val context = LocalContext.current
-    val fieldValue by viewModel.fieldValue.collectAsState()
-    val highlighted by viewModel.highlighted.collectAsState()
+    val text by viewModel.text.collectAsState()
     val isDirty by viewModel.isDirty.collectAsState()
     val currentUri by viewModel.currentFileUri.collectAsState()
     val currentFileName by viewModel.currentFileName.collectAsState()
     val wrapLines by viewModel.wrapLines.collectAsState()
     val isPatternFile by viewModel.isPatternFile.collectAsState()
     val showLineNumbers by viewModel.showLineNumbers.collectAsState()
+    val spanVersion by viewModel.spanVersion.collectAsState()
+    val loadVersion by viewModel.loadVersion.collectAsState()
 
     var showMenu by remember { mutableStateOf(false) }
     var pendingDiscardAction by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -70,6 +53,13 @@ fun EditorScreen(viewModel: EditorViewModel) {
     val saveLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("*/*")
     ) { uri: Uri? -> uri?.let { viewModel.saveAs(context, it) } }
+
+    // Tracks which loadVersion is currently reflected in the live EditText, so the
+    // AndroidView update block only pushes viewModel.text -> EditText on real file
+    // loads (open/new/pattern switch/reload), never in reaction to the user's own
+    // typing - the EditText already IS the source of that text, so re-setting it
+    // would just reset the cursor mid-keystroke.
+    var appliedLoadVersion by remember { mutableStateOf(-1) }
 
     Scaffold(
         topBar = {
@@ -180,163 +170,74 @@ fun EditorScreen(viewModel: EditorViewModel) {
                 }
             )
         }
-        val displayValue = remember(fieldValue, highlighted) {
-            fieldValue.copy(annotatedString = highlighted)
-        }
 
-        val density = LocalDensity.current
-        val textMeasurer = rememberTextMeasurer()
-        val scrollState = rememberScrollState()
-        val horizontalScrollState = rememberScrollState()
-        var viewportSize by remember { mutableStateOf(IntSize.Zero) }
-        var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
-
-        val gutterTextStyle = TextStyle(
-            color = FG.copy(alpha = 0.4f),
-            fontFamily = FontFamily.Monospace,
-            fontSize = 13.sp,
-            lineHeight = 20.sp
-        )
-
-        val lineCount = remember(fieldValue.text) { fieldValue.text.count { it == '\n' } + 1 }
-
-        val gutterWidth = remember(lineCount, density) {
-            val digits = lineCount.toString().length
-            val measured = textMeasurer.measure("0".repeat(digits), gutterTextStyle)
-            with(density) { measured.size.width.toDp() + 8.dp }
-        }
-
-        LaunchedEffect(wrapLines) {
-            horizontalScrollState.scrollTo(0)
-        }
-
-        val noOpBringIntoView = remember {
-            object : BringIntoViewSpec {
-                override fun calculateScrollDistance(
-                    offset: Float,
-                    size: Float,
-                    containerSize: Float
-                ) = 0f
-            }
-        }
-
-        val focusRequester = remember { FocusRequester() }
-        LaunchedEffect(Unit) {
-            focusRequester.requestFocus()
-        }
-
-        Row(
+        AndroidView(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .background(BG)
-        ) {
-            if (showLineNumbers) {
-                val lineNumbersText = remember(layoutResult, fieldValue.text) {
-                    val result = layoutResult
-                    if (result == null || result.lineCount == 0) {
-                        ""
-                    } else {
-                        val text = fieldValue.text
-                        // Map each visual (wrapped) line to the logical line number that starts there.
-                        val startsAtVisualLine = HashMap<Int, Int>()
-                        var logical = 1
-                        var offset = 0
-                        while (true) {
-                            val clamped = offset.coerceIn(0, text.length)
-                            val visualLine = result.getLineForOffset(clamped)
-                            startsAtVisualLine[visualLine] = logical
-                            val nextNewline = text.indexOf('\n', clamped)
-                            if (nextNewline == -1) break
-                            offset = nextNewline + 1
-                            logical++
+                .padding(padding),
+            factory = { ctx ->
+                CodeEditorView(ctx).apply {
+                    setBackgroundColor(BG.toArgb())
+
+                    editText.setTextSilently(text)
+                    appliedLoadVersion = loadVersion
+
+                    setWrapLines(wrapLines)
+                    setShowLineNumbers(showLineNumbers)
+                    updateGutterWidth(text.count { it == '\n' } + 1)
+
+                    editText.onTextChangedListener = { newText -> viewModel.onTextChanged(newText) }
+                    editText.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                        // Layout changed (text edit reflow, width change, wrap toggle) -
+                        // resync the gutter to match the new line positions.
+                        refreshLineNumbers()
+                    }
+
+                    val handler = Handler(Looper.getMainLooper())
+                    var pendingScrollUpdate: Runnable? = null
+                    onScrollChangedListener = {
+                        pendingScrollUpdate?.let { handler.removeCallbacks(it) }
+                        val job = Runnable {
+                            visibleOffsetRange()?.let { (start, end) ->
+                                viewModel.updateVisibleRange(start, end)
+                            }
                         }
-                        (0 until result.lineCount).joinToString("\n") { visualLine ->
-                            startsAtVisualLine[visualLine]?.toString() ?: ""
-                        }
+                        pendingScrollUpdate = job
+                        handler.postDelayed(job, 120)
+                    }
+
+                    // A layout pass has to happen first before spans/gutter numbers
+                    // can be computed against real line positions.
+                    post {
+                        refreshLineNumbers()
+                        editText.applyHighlightSpans(viewModel.computeSpans())
+                    }
+
+                    editText.requestFocus()
+                }
+            },
+            update = { view ->
+                if (loadVersion != appliedLoadVersion) {
+                    view.editText.setTextSilently(text)
+                    appliedLoadVersion = loadVersion
+                    view.post {
+                        view.refreshLineNumbers()
+                        view.editText.applyHighlightSpans(viewModel.computeSpans())
                     }
                 }
 
-                // Own vertical scroll (shared ScrollState) but no horizontal scroll,
-                // so the gutter stays pinned to the left edge when the text scrolls sideways.
-                Box(
-                    modifier = Modifier
-                        .width(gutterWidth)
-                        .fillMaxHeight()
-                        .verticalScroll(scrollState)
-                ) {
-                    BasicText(
-                        text = lineNumbersText,
-                        style = TextStyle(
-                            color = FG.copy(alpha = 0.4f),
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 13.sp,
-                            lineHeight = 20.sp,
-                            textAlign = TextAlign.End
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(end = 4.dp, top = 4.dp, bottom = 4.dp)
-                    )
-                }
+                view.setWrapLines(wrapLines)
+                view.setShowLineNumbers(showLineNumbers)
+                view.updateGutterWidth(text.count { it == '\n' } + 1)
 
-                // 1px divider between the line-number gutter and the text.
-                Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .width(0.5.dp)
-                        .background(Color(0xFF3C3C3C))
-                )
+                // Reading spanVersion here is what makes this update block - and
+                // therefore the span reapplication below - rerun whenever the
+                // ViewModel bumps it, whether from a keystroke or a scroll-triggered
+                // window shift.
+                @Suppress("UNUSED_EXPRESSION")
+                spanVersion
+                view.editText.applyHighlightSpans(viewModel.computeSpans())
             }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .onSizeChanged { viewportSize = it }
-                    .verticalScroll(scrollState)
-                    .let { if (wrapLines) it else it.horizontalScroll(horizontalScrollState) }
-            ) {
-                CompositionLocalProvider(LocalBringIntoViewSpec provides noOpBringIntoView) {
-                    BasicTextField(
-                        value = displayValue,
-                        onValueChange = { viewModel.onValueChange(it) },
-                        onTextLayout = { layoutResult = it },
-                        textStyle = TextStyle(
-                            color = FG,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 13.sp,
-                            lineHeight = 20.sp
-                        ),
-                        cursorBrush = SolidColor(FG),
-                        modifier = Modifier
-                            .let {
-                                if (wrapLines) {
-                                    it.fillMaxSize()
-                                } else {
-                                    val minWidth = with(density) { viewportSize.width.toDp() }
-                                    it.fillMaxHeight().widthIn(min = minWidth)
-                                }
-                            }
-                            .focusRequester(focusRequester)
-                            .padding(start = 4.dp, top = 4.dp, end = 8.dp, bottom = 4.dp)
-                    )
-                }
-            }
-        }
-
-        LaunchedEffect(scrollState) {
-            snapshotFlow { Triple(scrollState.value, viewportSize.height, layoutResult) }
-                .distinctUntilChanged()
-                .debounce(120)
-                .collect { (scrollOffset, viewportHeight, result) ->
-                    if (result == null || result.lineCount == 0 || viewportHeight == 0) return@collect
-                    val top = scrollOffset.toFloat().coerceAtLeast(0f)
-                    val bottom = (scrollOffset + viewportHeight).toFloat()
-                        .coerceAtMost(result.size.height.toFloat())
-                    val startOffset = result.getOffsetForPosition(Offset(0f, top))
-                    val endOffset = result.getOffsetForPosition(Offset(0f, bottom))
-                    viewModel.updateVisibleRange(startOffset, endOffset)
-                }
-        }
+        )
     }
 }

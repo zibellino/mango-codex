@@ -23,8 +23,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalCursorBlinkEnabled
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -56,6 +56,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
 
     var showMenu by remember { mutableStateOf(false) }
     var pendingDiscardAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
 
     fun runOrConfirmDiscard(action: () -> Unit) {
@@ -232,18 +233,27 @@ fun EditorScreen(viewModel: EditorViewModel) {
 
         // Cursor blink triggers a redraw of the whole field while focused. On a
         // large un-virtualized document that's expensive enough to cause visible
-        // stutter during fling deceleration. LocalCursorBlinkEnabled (from
-        // androidx.compose.ui:ui, not foundation) lets us suppress just the
-        // blink for the duration of a scroll, without touching focus/IME state.
-        var cursorBlinkEnabled by remember { mutableStateOf(true) }
+        // stutter during fling deceleration. Blurring for the duration of any
+        // scroll (drag or fling) stops the caret from being drawn/blinking, and
+        // we refocus the instant scrolling settles — invisible to the user since
+        // there's no caret to see while actively scrolling anyway.
+        //
+        // NOTE: we tried disabling blink via LocalCursorBlinkEnabled instead of
+        // touching focus, but providing a different CompositionLocal value forces
+        // recomposition of everything below it that reads it — including the
+        // BasicTextField itself — which re-triggers the same full-document cost
+        // this is meant to avoid, just moved to touch-down instead of mid-fling
+        // (huge lag before scroll starts). Blur/focus doesn't have that problem.
         LaunchedEffect(scrollState) {
             snapshotFlow { scrollState.isScrollInProgress }
                 .distinctUntilChanged()
-                .collect { inProgress -> cursorBlinkEnabled = !inProgress }
-        }
-
-        LaunchedEffect(Unit) {
-            focusRequester.requestFocus()
+                .collect { inProgress ->
+                    if (inProgress) {
+                        focusManager.clearFocus(force = true)
+                    } else {
+                        focusRequester.requestFocus()
+                    }
+                }
         }
 
         Row(
@@ -317,10 +327,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                     .verticalScroll(scrollState)
                     .let { if (wrapLines) it else it.horizontalScroll(horizontalScrollState) }
             ) {
-                CompositionLocalProvider(
-                    LocalBringIntoViewSpec provides noOpBringIntoView,
-                    LocalCursorBlinkEnabled provides cursorBlinkEnabled
-                ) {
+                CompositionLocalProvider(LocalBringIntoViewSpec provides noOpBringIntoView) {
                     BasicTextField(
                         value = displayValue,
                         onValueChange = { viewModel.onValueChange(it) },

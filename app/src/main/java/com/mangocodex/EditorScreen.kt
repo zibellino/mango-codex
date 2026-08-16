@@ -51,6 +51,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
     val wrapLines by viewModel.wrapLines.collectAsState()
     val isPatternFile by viewModel.isPatternFile.collectAsState()
     val showLineNumbers by viewModel.showLineNumbers.collectAsState()
+    val highlightEnabled by viewModel.highlightEnabled.collectAsState()
 
     var showMenu by remember { mutableStateOf(false) }
     var pendingDiscardAction by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -150,6 +151,13 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                 text = { Text(if (showLineNumbers) "✓ Line numbers" else "Line numbers") },
                                 onClick = {
                                     viewModel.toggleLineNumbers()
+                                    showMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (highlightEnabled) "✓ Highlighting" else "Highlighting") },
+                                onClick = {
+                                    viewModel.toggleHighlighting()
                                     showMenu = false
                                 }
                             )

@@ -3,10 +3,10 @@ package com.mangocodex
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
-import androidx.compose.foundation.text.input.TextFieldState
-import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,8 +21,11 @@ class EditorViewModel : ViewModel() {
 
     private var lexer: Lexer = Lexer(emptyList())
 
-    // Single source of text/selection truth with BTF2 buffer state
-    val state = TextFieldState("")
+    private val _fieldValue = MutableStateFlow(TextFieldValue(""))
+    val fieldValue: StateFlow<TextFieldValue> = _fieldValue
+
+    private val _highlighted = MutableStateFlow(AnnotatedString(""))
+    val highlighted: StateFlow<AnnotatedString> = _highlighted
 
     private val _currentFileUri = MutableStateFlow<Uri?>(null)
     val currentFileUri: StateFlow<Uri?> = _currentFileUri
@@ -42,15 +45,17 @@ class EditorViewModel : ViewModel() {
     private val _isPatternFile = MutableStateFlow(false)
     val isPatternFile: StateFlow<Boolean> = _isPatternFile
 
+    // Debug/perf toggle: when false, no tokenizing, no per-window AnnotatedString
+    // rebuilding, and scroll no longer triggers rehighlight() at all. Used to test
+    // whether scroll lag is caused by the highlighter or by the single-BasicTextField
+    // layout itself.
     private val _highlightEnabled = MutableStateFlow(true)
     val highlightEnabled: StateFlow<Boolean> = _highlightEnabled
 
-    // Expose current line spans to OutputTransformation dynamically
-    private val _highlightSpans = MutableStateFlow<List<Pair<IntRange, SpanStyle>>>(emptyList())
-    val highlightSpans: StateFlow<List<Pair<IntRange, SpanStyle>>> = _highlightSpans
-
     private var styledRange: IntRange = 0..0
+
     private val tokenCache = HashMap<Int, Pair<String, List<Token>>>()
+
     private var lineStartOffsets: List<Int> = listOf(0)
 
     fun loadPatterns(context: Context) {
@@ -78,6 +83,8 @@ class EditorViewModel : ViewModel() {
 
     fun toggleHighlighting() {
         _highlightEnabled.value = !_highlightEnabled.value
+        // Recompute immediately: turning off should drop to plain text right away,
+        // turning on should restore offsets/window state before scroll can use it.
         rehighlight()
     }
 
@@ -114,6 +121,12 @@ class EditorViewModel : ViewModel() {
         _isDirty.value = false
     }
 
+    /**
+     * Resolves the human-readable display name for a content:// URI via the
+     * ContentResolver, instead of relying on Uri.path (which for providers like
+     * the MediaStore-backed document provider returns an opaque document ID such
+     * as "msf:123456789" rather than a real filename).
+     */
     private fun queryDisplayName(context: Context, uri: Uri): String? {
         if (uri.scheme != "content") {
             return uri.path?.substringAfterLast("/")
@@ -135,14 +148,14 @@ class EditorViewModel : ViewModel() {
         if (_isPatternFile.value) { saveInternalPatterns(context); return }
         uri ?: return
         context.contentResolver.openOutputStream(uri, "wt")?.writer()?.use {
-            it.write(state.text.toString())
+            it.write(_fieldValue.value.text)
         }
         _isDirty.value = false
     }
 
     fun saveAs(context: Context, uri: Uri) {
         context.contentResolver.openOutputStream(uri, "wt")?.writer()?.use {
-            it.write(state.text.toString())
+            it.write(_fieldValue.value.text)
         }
         _currentFileUri.value = uri
         _currentFileName.value = queryDisplayName(context, uri)
@@ -152,19 +165,23 @@ class EditorViewModel : ViewModel() {
 
     fun saveInternalPatterns(context: Context) {
         context.openFileOutput(PATTERNS_INTERNAL_PATH, Context.MODE_PRIVATE).writer().use {
-            it.write(state.text.toString())
+            it.write(_fieldValue.value.text)
         }
         _isDirty.value = false
         reloadPatterns(context)
     }
 
-    fun onTextEdited() {
-        _isDirty.value = true
-        rehighlight()
+    fun onValueChange(newVal: TextFieldValue) {
+        val textChanged = newVal.text != _fieldValue.value.text
+        _fieldValue.value = newVal
+        if (textChanged) {
+            _isDirty.value = true
+            rehighlight()
+        }
     }
 
     private fun setText(text: String) {
-        state.setTextAndPlaceCursorAtEnd(text)
+        _fieldValue.value = TextFieldValue(text)
         tokenCache.clear()
         val lineCount = text.count { it == '\n' } + 1
         styledRange = 0..(WINDOW_MARGIN_LINES * 2).coerceAtMost(lineCount - 1)
@@ -172,6 +189,8 @@ class EditorViewModel : ViewModel() {
     }
 
     fun updateVisibleRange(startOffset: Int, endOffset: Int) {
+        // With highlighting disabled there's no window to maintain, so scrolling
+        // should trigger zero work here — this is the key isolation point.
         if (!_highlightEnabled.value) return
 
         val lineCount = lineStartOffsets.size
@@ -225,15 +244,16 @@ class EditorViewModel : ViewModel() {
     }
 
     private fun rehighlight() {
-        val currentText = state.text.toString()
+        val text = _fieldValue.value.text
 
         if (!_highlightEnabled.value) {
+            // Cheapest possible path: no split, no offsets, no tokenizing, no spans.
             lineStartOffsets = listOf(0)
-            _highlightSpans.value = emptyList()
+            _highlighted.value = AnnotatedString(text)
             return
         }
 
-        val lines = currentText.split("\n")
+        val lines = text.split("\n")
 
         val offsets = ArrayList<Int>(lines.size)
         var acc = 0
@@ -246,20 +266,22 @@ class EditorViewModel : ViewModel() {
         val rangeStart = styledRange.first.coerceIn(0, lines.size - 1)
         val rangeEnd = styledRange.last.coerceIn(0, lines.size - 1)
 
-        val spans = mutableListOf<Pair<IntRange, SpanStyle>>()
-        if (rangeStart <= rangeEnd) {
+        _highlighted.value = buildAnnotatedString {
+            append(text)
+            if (rangeStart > rangeEnd) return@buildAnnotatedString
             for (i in rangeStart..rangeEnd) {
                 val line = lines[i]
                 if (line.isEmpty()) continue
                 val tokens = tokensForLine(i, line)
                 val lineOffset = offsets[i]
                 for (token in tokens) {
-                    val start = lineOffset + token.start
-                    val end = (lineOffset + token.end).coerceAtMost(lineOffset + line.length)
-                    spans.add(start..end to SpanStyle(color = token.color))
+                    addStyle(
+                        SpanStyle(color = token.color),
+                        lineOffset + token.start,
+                        (lineOffset + token.end).coerceAtMost(lineOffset + line.length)
+                    )
                 }
             }
         }
-        _highlightSpans.value = spans
     }
 }

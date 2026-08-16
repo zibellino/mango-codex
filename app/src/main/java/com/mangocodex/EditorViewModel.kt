@@ -3,10 +3,7 @@ package com.mangocodex
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,15 +14,24 @@ private const val WINDOW_MARGIN_LINES = 150
 private const val WINDOW_SAFETY_LINES = WINDOW_MARGIN_LINES / 3
 private const val CACHE_RETENTION_LINES = WINDOW_MARGIN_LINES * 3
 
+data class HighlightSpan(val start: Int, val end: Int, val color: Color)
+
+/**
+ * Unlike the previous Compose-BasicTextField version, this ViewModel does not own
+ * cursor/selection state - the native EditText (see HighlightingEditText /
+ * CodeEditorView) is the source of truth for that, since Android's own widget
+ * already handles it efficiently (DynamicLayout incremental reflow, small dirty-rect
+ * invalidation for blink/selection) in a way BasicTextField's Paragraph-based layout
+ * does not. This class only tracks document content (for save/dirty) and drives the
+ * same windowed-highlighting strategy as before, now expressed as spans to apply
+ * directly onto the EditText's Editable instead of rebuilding an AnnotatedString.
+ */
 class EditorViewModel : ViewModel() {
 
     private var lexer: Lexer = Lexer(emptyList())
 
-    private val _fieldValue = MutableStateFlow(TextFieldValue(""))
-    val fieldValue: StateFlow<TextFieldValue> = _fieldValue
-
-    private val _highlighted = MutableStateFlow(AnnotatedString(""))
-    val highlighted: StateFlow<AnnotatedString> = _highlighted
+    private val _text = MutableStateFlow("")
+    val text: StateFlow<String> = _text
 
     private val _currentFileUri = MutableStateFlow<Uri?>(null)
     val currentFileUri: StateFlow<Uri?> = _currentFileUri
@@ -45,18 +51,31 @@ class EditorViewModel : ViewModel() {
     private val _isPatternFile = MutableStateFlow(false)
     val isPatternFile: StateFlow<Boolean> = _isPatternFile
 
+    // Bumped whenever the styled window (or underlying text) changes such that spans
+    // need to be reapplied to the EditText's Editable. The view observes this and
+    // pulls computeSpans() in response - it never carries the spans itself, since
+    // StateFlow diffing large lists on every keystroke would be its own cost.
+    private val _spanVersion = MutableStateFlow(0)
+    val spanVersion: StateFlow<Int> = _spanVersion
+
+    // Bumped only on externally-driven text replacement (open/new/pattern switch),
+    // never on the user's own typing - lets the view distinguish "I need to push
+    // this text into the EditText and reset its cursor" from "the EditText already
+    // has this text, don't touch it."
+    private val _loadVersion = MutableStateFlow(0)
+    val loadVersion: StateFlow<Int> = _loadVersion
+
     private var styledRange: IntRange = 0..0
-
     private val tokenCache = HashMap<Int, Pair<String, List<Token>>>()
-
     private var lineStartOffsets: List<Int> = listOf(0)
+    private var lines: List<String> = listOf("")
 
     fun loadPatterns(context: Context) {
         val csv = loadPatternsFromInternal(context)
             ?: context.assets.open(PATTERNS_INTERNAL_PATH).bufferedReader().readText()
         lexer = Lexer.fromCsv(csv)
         tokenCache.clear()
-        rehighlight()
+        _spanVersion.value++
     }
 
     fun reloadPatterns(context: Context) = loadPatterns(context)
@@ -134,14 +153,14 @@ class EditorViewModel : ViewModel() {
         if (_isPatternFile.value) { saveInternalPatterns(context); return }
         uri ?: return
         context.contentResolver.openOutputStream(uri, "wt")?.writer()?.use {
-            it.write(_fieldValue.value.text)
+            it.write(_text.value)
         }
         _isDirty.value = false
     }
 
     fun saveAs(context: Context, uri: Uri) {
         context.contentResolver.openOutputStream(uri, "wt")?.writer()?.use {
-            it.write(_fieldValue.value.text)
+            it.write(_text.value)
         }
         _currentFileUri.value = uri
         _currentFileName.value = queryDisplayName(context, uri)
@@ -151,29 +170,48 @@ class EditorViewModel : ViewModel() {
 
     fun saveInternalPatterns(context: Context) {
         context.openFileOutput(PATTERNS_INTERNAL_PATH, Context.MODE_PRIVATE).writer().use {
-            it.write(_fieldValue.value.text)
+            it.write(_text.value)
         }
         _isDirty.value = false
         reloadPatterns(context)
     }
 
-    fun onValueChange(newVal: TextFieldValue) {
-        val textChanged = newVal.text != _fieldValue.value.text
-        _fieldValue.value = newVal
-        if (textChanged) {
-            _isDirty.value = true
-            rehighlight()
-        }
+    /**
+     * Called by the view's TextWatcher on every edit. The EditText is the source of
+     * truth for cursor/selection; this only keeps content (for save/dirty) and the
+     * line index (for windowed highlighting) in sync with it.
+     */
+    fun onTextChanged(newText: String) {
+        if (newText == _text.value) return
+        _text.value = newText
+        _isDirty.value = true
+        recomputeLineIndex()
+        _spanVersion.value++
     }
 
     private fun setText(text: String) {
-        _fieldValue.value = TextFieldValue(text)
+        _text.value = text
         tokenCache.clear()
-        val lineCount = text.count { it == '\n' } + 1
+        recomputeLineIndex()
+        val lineCount = lines.size
         styledRange = 0..(WINDOW_MARGIN_LINES * 2).coerceAtMost(lineCount - 1)
-        rehighlight()
+        _spanVersion.value++
+        _loadVersion.value++
     }
 
+    private fun recomputeLineIndex() {
+        val split = _text.value.split("\n")
+        lines = split
+        val offsets = ArrayList<Int>(split.size)
+        var acc = 0
+        for (line in split) {
+            offsets.add(acc)
+            acc += line.length + 1
+        }
+        lineStartOffsets = offsets
+    }
+
+    /** Same windowing strategy as the Compose version - see updateVisibleRange usage. */
     fun updateVisibleRange(startOffset: Int, endOffset: Int) {
         val lineCount = lineStartOffsets.size
         if (lineCount == 0) return
@@ -189,7 +227,7 @@ class EditorViewModel : ViewModel() {
             val paddedLast = (lastLine + WINDOW_MARGIN_LINES).coerceAtMost(lineCount - 1)
             styledRange = paddedFirst..paddedLast
             pruneCache()
-            rehighlight()
+            _spanVersion.value++
         }
     }
 
@@ -225,37 +263,34 @@ class EditorViewModel : ViewModel() {
         return tokens
     }
 
-    private fun rehighlight() {
-        val text = _fieldValue.value.text
-        val lines = text.split("\n")
+    /**
+     * Computes spans for the current styled window only. Pulled by the view whenever
+     * spanVersion changes and applied directly onto the EditText's Editable as
+     * ForegroundColorSpans - no full-document AnnotatedString rebuild involved.
+     */
+    fun computeSpans(): List<HighlightSpan> {
+        val currentLines = lines
+        val offsets = lineStartOffsets
+        val rangeStart = styledRange.first.coerceIn(0, currentLines.size - 1)
+        val rangeEnd = styledRange.last.coerceIn(0, currentLines.size - 1)
+        if (rangeStart > rangeEnd) return emptyList()
 
-        val offsets = ArrayList<Int>(lines.size)
-        var acc = 0
-        for (line in lines) {
-            offsets.add(acc)
-            acc += line.length + 1
-        }
-        lineStartOffsets = offsets
-
-        val rangeStart = styledRange.first.coerceIn(0, lines.size - 1)
-        val rangeEnd = styledRange.last.coerceIn(0, lines.size - 1)
-
-        _highlighted.value = buildAnnotatedString {
-            append(text)
-            if (rangeStart > rangeEnd) return@buildAnnotatedString
-            for (i in rangeStart..rangeEnd) {
-                val line = lines[i]
-                if (line.isEmpty()) continue
-                val tokens = tokensForLine(i, line)
-                val lineOffset = offsets[i]
-                for (token in tokens) {
-                    addStyle(
-                        SpanStyle(color = token.color),
+        val spans = ArrayList<HighlightSpan>()
+        for (i in rangeStart..rangeEnd) {
+            val line = currentLines[i]
+            if (line.isEmpty()) continue
+            val tokens = tokensForLine(i, line)
+            val lineOffset = offsets[i]
+            for (token in tokens) {
+                spans.add(
+                    HighlightSpan(
                         lineOffset + token.start,
-                        (lineOffset + token.end).coerceAtMost(lineOffset + line.length)
+                        (lineOffset + token.end).coerceAtMost(lineOffset + line.length),
+                        token.color
                     )
-                }
+                )
             }
         }
+        return spans
     }
 }

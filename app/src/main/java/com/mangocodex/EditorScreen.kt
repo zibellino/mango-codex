@@ -56,11 +56,6 @@ fun EditorScreen(viewModel: EditorViewModel) {
 
     var showMenu by remember { mutableStateOf(false) }
     var pendingDiscardAction by remember { mutableStateOf<(() -> Unit)?>(null) }
-    // Debug/perf toggle: lets us blur the field on demand so we can scroll with
-    // zero cursor blink (no caret drawn => no blink animation loop running) and
-    // compare against the normal focused state, to test whether cursor blink is
-    // causing the periodic fling-decay stutter.
-    var cursorTestFocused by remember { mutableStateOf(true) }
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
 
@@ -169,26 +164,6 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                     showMenu = false
                                 }
                             )
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        if (cursorTestFocused)
-                                            "Blur field (cursor test)"
-                                        else
-                                            "Focus field (cursor test)"
-                                    )
-                                },
-                                onClick = {
-                                    cursorTestFocused = !cursorTestFocused
-                                    if (cursorTestFocused) {
-                                        focusRequester.requestFocus()
-                                    } else {
-                                        focusManager.clearFocus(force = true)
-                                    }
-                                    showMenu = false
-                                }
-                            )
                         }
                     }
                 }
@@ -256,8 +231,22 @@ fun EditorScreen(viewModel: EditorViewModel) {
             }
         }
 
-        LaunchedEffect(Unit) {
-            focusRequester.requestFocus()
+        // Cursor blink triggers a redraw of the whole field while focused. On a
+        // large un-virtualized document that's expensive enough to cause visible
+        // stutter during fling deceleration. Blurring for the duration of any
+        // scroll (drag or fling) stops the caret from being drawn/blinking, and
+        // we refocus the instant scrolling settles — invisible to the user since
+        // there's no caret to see while actively scrolling anyway.
+        LaunchedEffect(scrollState) {
+            snapshotFlow { scrollState.isScrollInProgress }
+                .distinctUntilChanged()
+                .collect { inProgress ->
+                    if (inProgress) {
+                        focusManager.clearFocus(force = true)
+                    } else {
+                        focusRequester.requestFocus()
+                    }
+                }
         }
 
         Row(

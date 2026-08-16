@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -69,7 +70,6 @@ fun EditorScreen(viewModel: EditorViewModel) {
         ActivityResultContracts.CreateDocument("*/*")
     ) { uri: Uri? -> uri?.let { viewModel.saveAs(context, it) } }
 
-    // Listen to internal text buffer changes without recomposing host layout
     LaunchedEffect(viewModel.state) {
         snapshotFlow { viewModel.state.text.toString() }
             .distinctUntilChanged()
@@ -232,11 +232,37 @@ fun EditorScreen(viewModel: EditorViewModel) {
             }
         }
 
-        // BTF2 dynamic syntax styling output transformation
-        val syntaxHighlightTransformation = OutputTransformation {
-            for ((range, style) in highlightSpans) {
-                if (range.first in 0..length && range.last in 0..length) {
-                    addStyle(style, range.first, range.last)
+        val syntaxHighlightTransformation = remember(highlightSpans) {
+            OutputTransformation {
+                for ((range, style) in highlightSpans) {
+                    if (range.first in 0..length && range.last in 0..length) {
+                        addStyle(style, range.first, range.last)
+                    }
+                }
+            }
+        }
+
+        val lineNumbersText by remember(rawText) {
+            derivedStateOf {
+                val result = layoutResult
+                if (result == null || result.lineCount == 0) {
+                    ""
+                } else {
+                    val startsAtVisualLine = HashMap<Int, Int>()
+                    var logical = 1
+                    var offset = 0
+                    while (true) {
+                        val clamped = offset.coerceIn(0, rawText.length)
+                        val visualLine = result.getLineForOffset(clamped)
+                        startsAtVisualLine[visualLine] = logical
+                        val nextNewline = rawText.indexOf('\n', clamped)
+                        if (nextNewline == -1) break
+                        offset = nextNewline + 1
+                        logical++
+                    }
+                    (0 until result.lineCount).joinToString("\n") { visualLine ->
+                        startsAtVisualLine[visualLine]?.toString() ?: ""
+                    }
                 }
             }
         }
@@ -248,29 +274,6 @@ fun EditorScreen(viewModel: EditorViewModel) {
                 .background(BG)
         ) {
             if (showLineNumbers) {
-                val lineNumbersText = remember(layoutResult, rawText) {
-                    val result = layoutResult
-                    if (result == null || result.lineCount == 0) {
-                        ""
-                    } else {
-                        val startsAtVisualLine = HashMap<Int, Int>()
-                        var logical = 1
-                        var offset = 0
-                        while (true) {
-                            val clamped = offset.coerceIn(0, rawText.length)
-                            val visualLine = result.getLineForOffset(clamped)
-                            startsAtVisualLine[visualLine] = logical
-                            val nextNewline = rawText.indexOf('\n', clamped)
-                            if (nextNewline == -1) break
-                            offset = nextNewline + 1
-                            logical++
-                        }
-                        (0 until result.lineCount).joinToString("\n") { visualLine ->
-                            startsAtVisualLine[visualLine]?.toString() ?: ""
-                        }
-                    }
-                }
-
                 Box(
                     modifier = Modifier
                         .width(gutterWidth)
@@ -311,7 +314,11 @@ fun EditorScreen(viewModel: EditorViewModel) {
                     BasicTextField(
                         state = viewModel.state,
                         onTextLayout = { layoutResultProvider ->
-                            layoutResult = layoutResultProvider()
+                            val newResult = layoutResultProvider()
+                            if (layoutResult?.lineCount != newResult.lineCount || 
+                                layoutResult?.size != newResult.size) {
+                                layoutResult = newResult
+                            }
                         },
                         outputTransformation = syntaxHighlightTransformation,
                         textStyle = TextStyle(
@@ -322,6 +329,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         ),
                         cursorBrush = SolidColor(FG),
                         modifier = Modifier
+                            .graphicsLayer() // Isolates cursor draw invalidation to a dedicated layer
                             .let {
                                 if (wrapLines) {
                                     it.fillMaxSize()

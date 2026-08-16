@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -55,6 +56,13 @@ fun EditorScreen(viewModel: EditorViewModel) {
 
     var showMenu by remember { mutableStateOf(false) }
     var pendingDiscardAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    // Debug/perf toggle: lets us blur the field on demand so we can scroll with
+    // zero cursor blink (no caret drawn => no blink animation loop running) and
+    // compare against the normal focused state, to test whether cursor blink is
+    // causing the periodic fling-decay stutter.
+    var cursorTestFocused by remember { mutableStateOf(true) }
+    val focusManager = LocalFocusManager.current
+    val focusRequester = remember { FocusRequester() }
 
     fun runOrConfirmDiscard(action: () -> Unit) {
         if (isDirty) {
@@ -161,6 +169,26 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                     showMenu = false
                                 }
                             )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        if (cursorTestFocused)
+                                            "Blur field (cursor test)"
+                                        else
+                                            "Focus field (cursor test)"
+                                    )
+                                },
+                                onClick = {
+                                    cursorTestFocused = !cursorTestFocused
+                                    if (cursorTestFocused) {
+                                        focusRequester.requestFocus()
+                                    } else {
+                                        focusManager.clearFocus(force = true)
+                                    }
+                                    showMenu = false
+                                }
+                            )
                         }
                     }
                 }
@@ -228,7 +256,6 @@ fun EditorScreen(viewModel: EditorViewModel) {
             }
         }
 
-        val focusRequester = remember { FocusRequester() }
         LaunchedEffect(Unit) {
             focusRequester.requestFocus()
         }

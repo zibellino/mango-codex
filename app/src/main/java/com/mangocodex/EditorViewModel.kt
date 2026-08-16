@@ -45,13 +45,6 @@ class EditorViewModel : ViewModel() {
     private val _isPatternFile = MutableStateFlow(false)
     val isPatternFile: StateFlow<Boolean> = _isPatternFile
 
-    // Debug/perf toggle: when false, no tokenizing, no per-window AnnotatedString
-    // rebuilding, and scroll no longer triggers rehighlight() at all. Used to test
-    // whether scroll lag is caused by the highlighter or by the single-BasicTextField
-    // layout itself.
-    private val _highlightEnabled = MutableStateFlow(true)
-    val highlightEnabled: StateFlow<Boolean> = _highlightEnabled
-
     private var styledRange: IntRange = 0..0
 
     private val tokenCache = HashMap<Int, Pair<String, List<Token>>>()
@@ -79,13 +72,6 @@ class EditorViewModel : ViewModel() {
 
     fun toggleLineNumbers() {
         _showLineNumbers.value = !_showLineNumbers.value
-    }
-
-    fun toggleHighlighting() {
-        _highlightEnabled.value = !_highlightEnabled.value
-        // Recompute immediately: turning off should drop to plain text right away,
-        // turning on should restore offsets/window state before scroll can use it.
-        rehighlight()
     }
 
     fun newFile() {
@@ -189,10 +175,6 @@ class EditorViewModel : ViewModel() {
     }
 
     fun updateVisibleRange(startOffset: Int, endOffset: Int) {
-        // With highlighting disabled there's no window to maintain, so scrolling
-        // should trigger zero work here — this is the key isolation point.
-        if (!_highlightEnabled.value) return
-
         val lineCount = lineStartOffsets.size
         if (lineCount == 0) return
 
@@ -245,14 +227,6 @@ class EditorViewModel : ViewModel() {
 
     private fun rehighlight() {
         val text = _fieldValue.value.text
-
-        if (!_highlightEnabled.value) {
-            // Cheapest possible path: no split, no offsets, no tokenizing, no spans.
-            lineStartOffsets = listOf(0)
-            _highlighted.value = AnnotatedString(text)
-            return
-        }
-
         val lines = text.split("\n")
 
         val offsets = ArrayList<Int>(lines.size)

@@ -23,7 +23,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalCursorBlinkEnabled
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
@@ -52,11 +51,9 @@ fun EditorScreen(viewModel: EditorViewModel) {
     val wrapLines by viewModel.wrapLines.collectAsState()
     val isPatternFile by viewModel.isPatternFile.collectAsState()
     val showLineNumbers by viewModel.showLineNumbers.collectAsState()
-    val highlightEnabled by viewModel.highlightEnabled.collectAsState()
 
     var showMenu by remember { mutableStateOf(false) }
     var pendingDiscardAction by remember { mutableStateOf<(() -> Unit)?>(null) }
-    val focusRequester = remember { FocusRequester() }
 
     fun runOrConfirmDiscard(action: () -> Unit) {
         if (isDirty) {
@@ -156,13 +153,6 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                     showMenu = false
                                 }
                             )
-                            DropdownMenuItem(
-                                text = { Text(if (highlightEnabled) "✓ Highlighting" else "Highlighting") },
-                                onClick = {
-                                    viewModel.toggleHighlighting()
-                                    showMenu = false
-                                }
-                            )
                         }
                     }
                 }
@@ -230,18 +220,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
             }
         }
 
-        // Cursor blink triggers a redraw of the whole field while focused. On a
-        // large un-virtualized document that's expensive enough to cause visible
-        // stutter during fling deceleration. LocalCursorBlinkEnabled (from
-        // androidx.compose.ui:ui, not foundation) lets us suppress just the
-        // blink for the duration of a scroll, without touching focus/IME state.
-        var cursorBlinkEnabled by remember { mutableStateOf(true) }
-        LaunchedEffect(scrollState) {
-            snapshotFlow { scrollState.isScrollInProgress }
-                .distinctUntilChanged()
-                .collect { inProgress -> cursorBlinkEnabled = !inProgress }
-        }
-
+        val focusRequester = remember { FocusRequester() }
         LaunchedEffect(Unit) {
             focusRequester.requestFocus()
         }
@@ -317,10 +296,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                     .verticalScroll(scrollState)
                     .let { if (wrapLines) it else it.horizontalScroll(horizontalScrollState) }
             ) {
-                CompositionLocalProvider(
-                    LocalBringIntoViewSpec provides noOpBringIntoView,
-                    LocalCursorBlinkEnabled provides cursorBlinkEnabled
-                ) {
+                CompositionLocalProvider(LocalBringIntoViewSpec provides noOpBringIntoView) {
                     BasicTextField(
                         value = displayValue,
                         onValueChange = { viewModel.onValueChange(it) },

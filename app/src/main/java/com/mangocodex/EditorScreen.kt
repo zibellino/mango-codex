@@ -307,10 +307,19 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                 }
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            TextButton(onClick = { /* TODO: find next */ }) {
+                            TextButton(
+                                onClick = { /* TODO: find next */ },
+                                modifier = Modifier.width(76.dp)
+                            ) {
                                 Text("Next", fontSize = 13.sp)
                             }
-                            TextButton(onClick = { viewModel.toggleRegex() }) {
+                            TextButton(
+                                onClick = { viewModel.toggleRegex() },
+                                modifier = Modifier.width(56.dp),
+                                colors = ButtonDefaults.textButtonColors(
+                                    containerColor = if (useRegex) Color(0xFF3C3C40) else Color.Transparent
+                                )
+                            ) {
                                 Text(
                                     ".*",
                                     fontSize = 13.sp,
@@ -327,10 +336,16 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                 modifier = Modifier.weight(1f)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            TextButton(onClick = { /* TODO: replace current match */ }) {
+                            TextButton(
+                                onClick = { /* TODO: replace current match */ },
+                                modifier = Modifier.width(76.dp)
+                            ) {
                                 Text("Replace", fontSize = 13.sp)
                             }
-                            TextButton(onClick = { /* TODO: replace all matches */ }) {
+                            TextButton(
+                                onClick = { /* TODO: replace all matches */ },
+                                modifier = Modifier.width(56.dp)
+                            ) {
                                 Text("All", fontSize = 13.sp)
                             }
                         }

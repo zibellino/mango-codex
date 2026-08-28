@@ -125,6 +125,13 @@ class EditorViewModel : ViewModel() {
         _replaceQuery.value = query
     }
 
+    private val _useRegex = MutableStateFlow(false)
+    val useRegex: StateFlow<Boolean> = _useRegex
+
+    fun toggleRegex() {
+        _useRegex.value = !_useRegex.value
+    }
+
     fun newFile() {
         _currentFileUri.value = null
         _currentFileName.value = null

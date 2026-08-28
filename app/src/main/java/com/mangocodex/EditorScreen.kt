@@ -5,20 +5,28 @@ import android.os.Handler
 import android.os.Looper
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,6 +50,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
     val findBarVisible by viewModel.findBarVisible.collectAsState()
     val findQuery by viewModel.findQuery.collectAsState()
     val replaceQuery by viewModel.replaceQuery.collectAsState()
+    val useRegex by viewModel.useRegex.collectAsState()
     val spanVersion by viewModel.spanVersion.collectAsState()
     val loadVersion by viewModel.loadVersion.collectAsState()
 
@@ -125,9 +134,9 @@ fun EditorScreen(viewModel: EditorViewModel) {
                             )
                             HorizontalDivider()
                             DropdownMenuItem(
-                                text = { Text("Find/Replace") },
+                                text = { Text(if (findBarVisible) "✓ Find/Replace" else "Find/Replace") },
                                 onClick = {
-                                    viewModel.openFindBar()
+                                    if (findBarVisible) viewModel.closeFindBar() else viewModel.openFindBar()
                                     showMenu = false
                                 }
                             )
@@ -266,7 +275,8 @@ fun EditorScreen(viewModel: EditorViewModel) {
                 }
             )
 
-            // Find/Replace bar: two stacked fields, no search logic wired up yet.
+            // Find/Replace bar (layout pass - Next/Replace/All/regex are not wired to
+            // real search logic yet, that's the next step).
             if (findBarVisible) {
                 Surface(
                     modifier = Modifier
@@ -277,35 +287,96 @@ fun EditorScreen(viewModel: EditorViewModel) {
                     tonalElevation = 8.dp,
                     shadowElevation = 8.dp
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(8.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            OutlinedTextField(
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            CompactTextField(
                                 value = findQuery,
                                 onValueChange = { viewModel.setFindQuery(it) },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                placeholder = { Text("Find") }
+                                placeholder = "Find",
+                                modifier = Modifier.weight(1f),
+                                trailing = {
+                                    Text(
+                                        text = "0/0",
+                                        color = FG.copy(alpha = 0.5f),
+                                        fontSize = 12.sp
+                                    )
+                                }
                             )
-                            OutlinedTextField(
+                            Spacer(modifier = Modifier.width(4.dp))
+                            TextButton(onClick = { /* TODO: find next */ }) {
+                                Text("Next", fontSize = 13.sp)
+                            }
+                            TextButton(onClick = { viewModel.toggleRegex() }) {
+                                Text(
+                                    ".*",
+                                    fontSize = 13.sp,
+                                    color = if (useRegex) Color(0xFF569CD6) else FG
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            CompactTextField(
                                 value = replaceQuery,
                                 onValueChange = { viewModel.setReplaceQuery(it) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 4.dp),
-                                singleLine = true,
-                                placeholder = { Text("Replace") }
+                                placeholder = "Replace",
+                                modifier = Modifier.weight(1f)
                             )
-                        }
-                        IconButton(onClick = { viewModel.closeFindBar() }) {
-                            Text("✕", color = FG, fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            TextButton(onClick = { /* TODO: replace current match */ }) {
+                                Text("Replace", fontSize = 13.sp)
+                            }
+                            TextButton(onClick = { /* TODO: replace all matches */ }) {
+                                Text("All", fontSize = 13.sp)
+                            }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * A single-line text field with tighter chrome than Material3's OutlinedTextField,
+ * whose default label/padding makes it too tall for a compact find/replace bar.
+ */
+@Composable
+private fun CompactTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    trailing: (@Composable () -> Unit)? = null
+) {
+    Box(
+        modifier = modifier
+            .height(36.dp)
+            .border(1.dp, Color(0xFF3C3C3C), RoundedCornerShape(4.dp))
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Box(modifier = Modifier.weight(1f)) {
+                if (value.isEmpty()) {
+                    Text(placeholder, color = FG.copy(alpha = 0.4f), fontSize = 13.sp)
+                }
+                BasicTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    singleLine = true,
+                    textStyle = TextStyle(color = FG, fontSize = 13.sp),
+                    cursorBrush = SolidColor(FG),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            if (trailing != null) {
+                Spacer(modifier = Modifier.width(6.dp))
+                trailing()
             }
         }
     }

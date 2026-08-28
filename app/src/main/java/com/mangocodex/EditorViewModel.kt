@@ -51,6 +51,9 @@ class EditorViewModel : ViewModel() {
     private val _autoIndent = MutableStateFlow(true)
     val autoIndent: StateFlow<Boolean> = _autoIndent
 
+    private val _findBarVisible = MutableStateFlow(false)
+    val findBarVisible: StateFlow<Boolean> = _findBarVisible
+
     private val _isPatternFile = MutableStateFlow(false)
     val isPatternFile: StateFlow<Boolean> = _isPatternFile
 
@@ -98,6 +101,14 @@ class EditorViewModel : ViewModel() {
 
     fun toggleAutoIndent() {
         _autoIndent.value = !_autoIndent.value
+    }
+
+    fun openFindBar() {
+        _findBarVisible.value = true
+    }
+
+    fun closeFindBar() {
+        _findBarVisible.value = false
     }
 
     fun newFile() {

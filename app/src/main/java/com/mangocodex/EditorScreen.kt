@@ -6,15 +6,20 @@ import android.os.Looper
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 
@@ -33,6 +38,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
     val isPatternFile by viewModel.isPatternFile.collectAsState()
     val showLineNumbers by viewModel.showLineNumbers.collectAsState()
     val autoIndent by viewModel.autoIndent.collectAsState()
+    val findBarVisible by viewModel.findBarVisible.collectAsState()
     val spanVersion by viewModel.spanVersion.collectAsState()
     val loadVersion by viewModel.loadVersion.collectAsState()
 
@@ -74,6 +80,9 @@ fun EditorScreen(viewModel: EditorViewModel) {
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF252526)),
                 actions = {
+                    IconButton(onClick = { viewModel.openFindBar() }) {
+                        Text("🔍", fontSize = 16.sp)
+                    }
                     Box {
                         IconButton(onClick = { showMenu = true }) {
                             Text("⋮", color = FG, fontSize = 20.sp)
@@ -179,75 +188,104 @@ fun EditorScreen(viewModel: EditorViewModel) {
             )
         }
 
-        AndroidView(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            factory = { ctx ->
-                CodeEditorView(ctx).apply {
-                    setBackgroundColor(BG.toArgb())
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    CodeEditorView(ctx).apply {
+                        setBackgroundColor(BG.toArgb())
 
-                    editText.setTextSilently(text)
-                    appliedLoadVersion = loadVersion
+                        editText.setTextSilently(text)
+                        appliedLoadVersion = loadVersion
 
-                    setWrapLines(wrapLines)
-                    setShowLineNumbers(showLineNumbers)
-                    setAutoIndent(autoIndent)
-                    updateGutterWidth(text.count { it == '\n' } + 1)
+                        setWrapLines(wrapLines)
+                        setShowLineNumbers(showLineNumbers)
+                        setAutoIndent(autoIndent)
+                        updateGutterWidth(text.count { it == '\n' } + 1)
 
-                    editText.onTextChangedListener = { newText -> viewModel.onTextChanged(newText) }
-                    editText.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-                        // Layout changed (text edit reflow, width change, wrap toggle) -
-                        // resync the gutter to match the new line positions.
-                        refreshLineNumbers()
-                    }
-
-                    val handler = Handler(Looper.getMainLooper())
-                    var pendingScrollUpdate: Runnable? = null
-                    onScrollChangedListener = {
-                        pendingScrollUpdate?.let { handler.removeCallbacks(it) }
-                        val job = Runnable {
-                            visibleOffsetRange()?.let { (start, end) ->
-                                viewModel.updateVisibleRange(start, end)
-                            }
+                        editText.onTextChangedListener = { newText -> viewModel.onTextChanged(newText) }
+                        editText.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                            // Layout changed (text edit reflow, width change, wrap toggle) -
+                            // resync the gutter to match the new line positions.
+                            refreshLineNumbers()
                         }
-                        pendingScrollUpdate = job
-                        handler.postDelayed(job, 120)
+
+                        val handler = Handler(Looper.getMainLooper())
+                        var pendingScrollUpdate: Runnable? = null
+                        onScrollChangedListener = {
+                            pendingScrollUpdate?.let { handler.removeCallbacks(it) }
+                            val job = Runnable {
+                                visibleOffsetRange()?.let { (start, end) ->
+                                    viewModel.updateVisibleRange(start, end)
+                                }
+                            }
+                            pendingScrollUpdate = job
+                            handler.postDelayed(job, 120)
+                        }
+
+                        // A layout pass has to happen first before spans/gutter numbers
+                        // can be computed against real line positions.
+                        post {
+                            refreshLineNumbers()
+                            editText.applyHighlightSpans(viewModel.computeSpans())
+                        }
+
+                        editText.requestFocus()
+                    }
+                },
+                update = { view ->
+                    if (loadVersion != appliedLoadVersion) {
+                        view.editText.setTextSilently(text)
+                        appliedLoadVersion = loadVersion
+                        view.post {
+                            view.refreshLineNumbers()
+                            view.editText.applyHighlightSpans(viewModel.computeSpans())
+                        }
                     }
 
-                    // A layout pass has to happen first before spans/gutter numbers
-                    // can be computed against real line positions.
-                    post {
-                        refreshLineNumbers()
-                        editText.applyHighlightSpans(viewModel.computeSpans())
-                    }
+                    view.setWrapLines(wrapLines)
+                    view.setShowLineNumbers(showLineNumbers)
+                    view.setAutoIndent(autoIndent)
+                    view.updateGutterWidth(text.count { it == '\n' } + 1)
 
-                    editText.requestFocus()
+                    // Reading spanVersion here is what makes this update block - and
+                    // therefore the span reapplication below - rerun whenever the
+                    // ViewModel bumps it, whether from a keystroke or a scroll-triggered
+                    // window shift.
+                    @Suppress("UNUSED_EXPRESSION")
+                    spanVersion
+                    view.editText.applyHighlightSpans(viewModel.computeSpans())
                 }
-            },
-            update = { view ->
-                if (loadVersion != appliedLoadVersion) {
-                    view.editText.setTextSilently(text)
-                    appliedLoadVersion = loadVersion
-                    view.post {
-                        view.refreshLineNumbers()
-                        view.editText.applyHighlightSpans(viewModel.computeSpans())
+            )
+
+            // Step 1 of find/replace: bar shell only, no search logic wired up yet.
+            if (findBarVisible) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .imePadding(),
+                    color = Color(0xFF252526),
+                    tonalElevation = 8.dp,
+                    shadowElevation = 8.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Find/Replace (coming soon)",
+                            color = FG,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = { viewModel.closeFindBar() }) {
+                            Text("✕", color = FG, fontSize = 16.sp)
+                        }
                     }
                 }
-
-                view.setWrapLines(wrapLines)
-                view.setShowLineNumbers(showLineNumbers)
-                view.setAutoIndent(autoIndent)
-                view.updateGutterWidth(text.count { it == '\n' } + 1)
-
-                // Reading spanVersion here is what makes this update block - and
-                // therefore the span reapplication below - rerun whenever the
-                // ViewModel bumps it, whether from a keystroke or a scroll-triggered
-                // window shift.
-                @Suppress("UNUSED_EXPRESSION")
-                spanVersion
-                view.editText.applyHighlightSpans(viewModel.computeSpans())
             }
-        )
+        }
     }
 }

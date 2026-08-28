@@ -314,7 +314,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                 contentPadding = PaddingValues(horizontal = 8.dp)
                             ) {
                                 Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
-                                    Text("Next", fontSize = 13.sp)
+                                    Text(" Next", fontSize = 13.sp)
                                 }
                             }
                             TextButton(
@@ -327,7 +327,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                 Text(
                                     ".*",
                                     fontSize = 13.sp,
-                                    color = if (useRegex) Color(0xFF569CD6) else FG
+                                    color = FG
                                 )
                             }
                         }
@@ -346,7 +346,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                 contentPadding = PaddingValues(horizontal = 8.dp)
                             ) {
                                 Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
-                                    Text("Replace", fontSize = 13.sp)
+                                    Text(" Replace", fontSize = 13.sp)
                                 }
                             }
                             TextButton(

@@ -48,6 +48,9 @@ class EditorViewModel : ViewModel() {
     private val _showLineNumbers = MutableStateFlow(true)
     val showLineNumbers: StateFlow<Boolean> = _showLineNumbers
 
+    private val _autoIndent = MutableStateFlow(true)
+    val autoIndent: StateFlow<Boolean> = _autoIndent
+
     private val _isPatternFile = MutableStateFlow(false)
     val isPatternFile: StateFlow<Boolean> = _isPatternFile
 
@@ -91,6 +94,10 @@ class EditorViewModel : ViewModel() {
 
     fun toggleLineNumbers() {
         _showLineNumbers.value = !_showLineNumbers.value
+    }
+
+    fun toggleAutoIndent() {
+        _autoIndent.value = !_autoIndent.value
     }
 
     fun newFile() {

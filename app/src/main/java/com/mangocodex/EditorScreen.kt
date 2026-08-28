@@ -6,6 +6,7 @@ import android.os.Looper
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,6 +40,8 @@ fun EditorScreen(viewModel: EditorViewModel) {
     val showLineNumbers by viewModel.showLineNumbers.collectAsState()
     val autoIndent by viewModel.autoIndent.collectAsState()
     val findBarVisible by viewModel.findBarVisible.collectAsState()
+    val findQuery by viewModel.findQuery.collectAsState()
+    val replaceQuery by viewModel.replaceQuery.collectAsState()
     val spanVersion by viewModel.spanVersion.collectAsState()
     val loadVersion by viewModel.loadVersion.collectAsState()
 
@@ -80,9 +83,6 @@ fun EditorScreen(viewModel: EditorViewModel) {
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF252526)),
                 actions = {
-                    IconButton(onClick = { viewModel.openFindBar() }) {
-                        Text("🔍", fontSize = 16.sp)
-                    }
                     Box {
                         IconButton(onClick = { showMenu = true }) {
                             Text("⋮", color = FG, fontSize = 20.sp)
@@ -120,6 +120,14 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                 text = { Text("Save as…") },
                                 onClick = {
                                     saveLauncher.launch("untitled.txt")
+                                    showMenu = false
+                                }
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Find/Replace") },
+                                onClick = {
+                                    viewModel.openFindBar()
                                     showMenu = false
                                 }
                             )
@@ -258,7 +266,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                 }
             )
 
-            // Step 1 of find/replace: bar shell only, no search logic wired up yet.
+            // Find/Replace bar: two stacked fields, no search logic wired up yet.
             if (findBarVisible) {
                 Surface(
                     modifier = Modifier
@@ -275,11 +283,24 @@ fun EditorScreen(viewModel: EditorViewModel) {
                             .padding(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "Find/Replace (coming soon)",
-                            color = FG,
-                            modifier = Modifier.weight(1f)
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            OutlinedTextField(
+                                value = findQuery,
+                                onValueChange = { viewModel.setFindQuery(it) },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                placeholder = { Text("Find") }
+                            )
+                            OutlinedTextField(
+                                value = replaceQuery,
+                                onValueChange = { viewModel.setReplaceQuery(it) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp),
+                                singleLine = true,
+                                placeholder = { Text("Replace") }
+                            )
+                        }
                         IconButton(onClick = { viewModel.closeFindBar() }) {
                             Text("✕", color = FG, fontSize = 16.sp)
                         }

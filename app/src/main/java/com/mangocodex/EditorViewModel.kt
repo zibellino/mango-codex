@@ -54,6 +54,12 @@ class EditorViewModel : ViewModel() {
     private val _findBarVisible = MutableStateFlow(false)
     val findBarVisible: StateFlow<Boolean> = _findBarVisible
 
+    private val _findQuery = MutableStateFlow("")
+    val findQuery: StateFlow<String> = _findQuery
+
+    private val _replaceQuery = MutableStateFlow("")
+    val replaceQuery: StateFlow<String> = _replaceQuery
+
     private val _isPatternFile = MutableStateFlow(false)
     val isPatternFile: StateFlow<Boolean> = _isPatternFile
 
@@ -109,6 +115,14 @@ class EditorViewModel : ViewModel() {
 
     fun closeFindBar() {
         _findBarVisible.value = false
+    }
+
+    fun setFindQuery(query: String) {
+        _findQuery.value = query
+    }
+
+    fun setReplaceQuery(query: String) {
+        _replaceQuery.value = query
     }
 
     fun newFile() {

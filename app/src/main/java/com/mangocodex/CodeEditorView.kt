@@ -119,6 +119,10 @@ class CodeEditorView(context: Context) : ScrollView(context) {
         horizontalScroller.scrollTo(0, 0)
     }
 
+    fun setAutoIndent(enabled: Boolean) {
+        editText.autoIndentEnabled = enabled
+    }
+
     fun setShowLineNumbers(show: Boolean) {
         val visibility = if (show) View.VISIBLE else View.GONE
         gutter.visibility = visibility

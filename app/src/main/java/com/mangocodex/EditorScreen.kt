@@ -32,6 +32,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
     val wrapLines by viewModel.wrapLines.collectAsState()
     val isPatternFile by viewModel.isPatternFile.collectAsState()
     val showLineNumbers by viewModel.showLineNumbers.collectAsState()
+    val autoIndent by viewModel.autoIndent.collectAsState()
     val spanVersion by viewModel.spanVersion.collectAsState()
     val loadVersion by viewModel.loadVersion.collectAsState()
 
@@ -143,6 +144,13 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                     showMenu = false
                                 }
                             )
+                            DropdownMenuItem(
+                                text = { Text(if (autoIndent) "✓ Auto-indent" else "Auto-indent") },
+                                onClick = {
+                                    viewModel.toggleAutoIndent()
+                                    showMenu = false
+                                }
+                            )
                         }
                     }
                 }
@@ -184,6 +192,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
 
                     setWrapLines(wrapLines)
                     setShowLineNumbers(showLineNumbers)
+                    setAutoIndent(autoIndent)
                     updateGutterWidth(text.count { it == '\n' } + 1)
 
                     editText.onTextChangedListener = { newText -> viewModel.onTextChanged(newText) }
@@ -228,6 +237,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
 
                 view.setWrapLines(wrapLines)
                 view.setShowLineNumbers(showLineNumbers)
+                view.setAutoIndent(autoIndent)
                 view.updateGutterWidth(text.count { it == '\n' } + 1)
 
                 // Reading spanVersion here is what makes this update block - and

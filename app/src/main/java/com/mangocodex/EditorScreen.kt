@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -309,15 +310,18 @@ fun EditorScreen(viewModel: EditorViewModel) {
                             Spacer(modifier = Modifier.width(4.dp))
                             TextButton(
                                 onClick = { /* TODO: find next */ },
-                                modifier = Modifier.width(76.dp)
+                                modifier = Modifier.width(76.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp)
                             ) {
-                                Text("Next", fontSize = 13.sp)
+                                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+                                    Text("Next", fontSize = 13.sp)
+                                }
                             }
                             TextButton(
                                 onClick = { viewModel.toggleRegex() },
                                 modifier = Modifier.width(56.dp),
                                 colors = ButtonDefaults.textButtonColors(
-                                    containerColor = if (useRegex) Color(0xFF3C3C40) else Color.Transparent
+                                    containerColor = if (useRegex) Color(0xFF5A5A62) else Color.Transparent
                                 )
                             ) {
                                 Text(
@@ -338,9 +342,12 @@ fun EditorScreen(viewModel: EditorViewModel) {
                             Spacer(modifier = Modifier.width(4.dp))
                             TextButton(
                                 onClick = { /* TODO: replace current match */ },
-                                modifier = Modifier.width(76.dp)
+                                modifier = Modifier.width(76.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp)
                             ) {
-                                Text("Replace", fontSize = 13.sp)
+                                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+                                    Text("Replace", fontSize = 13.sp)
+                                }
                             }
                             TextButton(
                                 onClick = { /* TODO: replace all matches */ },

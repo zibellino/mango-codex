@@ -131,4 +131,12 @@ class HighlightingEditText(context: Context) : AppCompatEditText(context) {
             suppressWatcher = false
         }
     }
+
+    /** Selects [range] (used to highlight the current find match via native selection). */
+    fun selectRange(range: IntRange) {
+        val length = text?.length ?: return
+        val start = range.first.coerceIn(0, length)
+        val end = (range.last + 1).coerceIn(0, length)
+        setSelection(start, end)
+    }
 }

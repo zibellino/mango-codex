@@ -197,4 +197,26 @@ class CodeEditorView(context: Context) : ScrollView(context) {
         val endOffset = layout.getLineEnd(lastLine)
         return startOffset to endOffset
     }
+
+    /** Scrolls just enough to bring the line containing [offset] into view. */
+    fun scrollToOffset(offset: Int) {
+        val layout = editText.layout ?: return
+        val length = editText.text?.length ?: 0
+        val clamped = offset.coerceIn(0, length)
+        val line = layout.getLineForOffset(clamped)
+        val lineTop = layout.getLineTop(line) + editText.paddingTop
+        val lineBottom = layout.getLineBottom(line) + editText.paddingTop
+        val visibleTop = scrollY
+        val visibleBottom = scrollY + height
+        when {
+            lineTop < visibleTop -> scrollTo(0, lineTop)
+            lineBottom > visibleBottom -> scrollTo(0, (lineBottom - height).coerceAtLeast(0))
+        }
+    }
+
+    /** Selects [range] and scrolls it into view - used to reveal the current find match. */
+    fun revealMatch(range: IntRange) {
+        editText.selectRange(range)
+        scrollToOffset(range.first)
+    }
 }

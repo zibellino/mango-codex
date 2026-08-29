@@ -5,10 +5,11 @@ import android.os.Handler
 import android.os.Looper
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -308,27 +309,19 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                 }
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            TextButton(
+                            CompactButton(
                                 onClick = { /* TODO: find next */ },
-                                modifier = Modifier.width(76.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp)
+                                modifier = Modifier.width(64.dp),
+                                contentAlignment = Alignment.CenterStart
                             ) {
-                                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
-                                    Text(" Next", fontSize = 13.sp)
-                                }
+                                Text(" Next", fontSize = 12.sp)
                             }
-                            TextButton(
+                            CompactButton(
                                 onClick = { viewModel.toggleRegex() },
-                                modifier = Modifier.width(56.dp),
-                                colors = ButtonDefaults.textButtonColors(
-                                    containerColor = if (useRegex) Color(0xFF5A5A62) else Color.Transparent
-                                )
+                                modifier = Modifier.width(40.dp),
+                                backgroundColor = if (useRegex) Color(0xFF5A5A62) else Color.Transparent
                             ) {
-                                Text(
-                                    ".*",
-                                    fontSize = 13.sp,
-                                    color = FG
-                                )
+                                Text(".*", fontSize = 12.sp, color = FG)
                             }
                         }
                         Spacer(modifier = Modifier.height(4.dp))
@@ -340,20 +333,18 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                 modifier = Modifier.weight(1f)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            TextButton(
+                            CompactButton(
                                 onClick = { /* TODO: replace current match */ },
-                                modifier = Modifier.width(76.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp)
+                                modifier = Modifier.width(64.dp),
+                                contentAlignment = Alignment.CenterStart
                             ) {
-                                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
-                                    Text(" Replace", fontSize = 13.sp)
-                                }
+                                Text(" Replace", fontSize = 12.sp)
                             }
-                            TextButton(
+                            CompactButton(
                                 onClick = { /* TODO: replace all matches */ },
-                                modifier = Modifier.width(56.dp)
+                                modifier = Modifier.width(40.dp)
                             ) {
-                                Text("All", fontSize = 13.sp)
+                                Text("All", fontSize = 12.sp)
                             }
                         }
                     }
@@ -377,7 +368,7 @@ private fun CompactTextField(
 ) {
     Box(
         modifier = modifier
-            .height(36.dp)
+            .height(32.dp)
             .border(1.dp, Color(0xFF3C3C3C), RoundedCornerShape(4.dp))
             .padding(horizontal = 8.dp),
         contentAlignment = Alignment.CenterStart
@@ -385,13 +376,13 @@ private fun CompactTextField(
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Box(modifier = Modifier.weight(1f)) {
                 if (value.isEmpty()) {
-                    Text(placeholder, color = FG.copy(alpha = 0.4f), fontSize = 13.sp)
+                    Text(placeholder, color = FG.copy(alpha = 0.4f), fontSize = 12.sp)
                 }
                 BasicTextField(
                     value = value,
                     onValueChange = onValueChange,
                     singleLine = true,
-                    textStyle = TextStyle(color = FG, fontSize = 13.sp),
+                    textStyle = TextStyle(color = FG, fontSize = 12.sp),
                     cursorBrush = SolidColor(FG),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -401,5 +392,30 @@ private fun CompactTextField(
                 trailing()
             }
         }
+    }
+}
+
+/**
+ * A small clickable chip used for the find/replace bar's action buttons. Plain
+ * TextButton enforces Material's ~40dp minimum touch target, which is too tall for
+ * this bar, so this gives full control over height/width instead.
+ */
+@Composable
+private fun CompactButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    backgroundColor: Color = Color.Transparent,
+    contentAlignment: Alignment = Alignment.Center,
+    content: @Composable () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .height(32.dp)
+            .background(backgroundColor, RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp),
+        contentAlignment = contentAlignment
+    ) {
+        content()
     }
 }

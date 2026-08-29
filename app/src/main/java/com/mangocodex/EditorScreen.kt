@@ -37,6 +37,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 val BG = Color(0xFF1E1E1E)
 val FG = Color(0xFFD4D4D4)
 
+// Outline color for find matches - distinct from both the syntax-highlight palette
+// and the current match's native (blue-ish) text selection color.
+private val MATCH_BORDER_COLOR = Color(0xFFCC8800).toArgb()
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(viewModel: EditorViewModel) {
@@ -89,6 +93,14 @@ fun EditorScreen(viewModel: EditorViewModel) {
     // time - find navigation is driven by where the cursor actually is right now,
     // not by any state the ViewModel tracks separately.
     var editorViewRef by remember { mutableStateOf<CodeEditorView?>(null) }
+
+    // Tracks which scrollToMatchVersion has already been revealed, so a match is only
+    // selected/scrolled-to once per actual find-navigation event - not on every
+    // recomposition of this update block (which also fires on unrelated scroll/edit
+    // activity via spanVersion). Without this guard, any scroll while the find bar is
+    // open would re-select and re-scroll back to the last match, and would keep
+    // stealing focus away from wherever the user just tapped or typed.
+    var appliedMatchVersion by remember { mutableStateOf(-1) }
 
     Scaffold(
         topBar = {
@@ -286,12 +298,22 @@ fun EditorScreen(viewModel: EditorViewModel) {
 
                     // Reading scrollToMatchVersion here is what makes this update block
                     // rerun on every find-navigation jump (typing a new query, opening
-                    // the bar, or pressing Next), so the current match gets selected and
-                    // scrolled into view right after the ViewModel recomputes it.
+                    // the bar, or pressing Next). appliedMatchVersion then gates the
+                    // actual reveal so it only happens once per real jump, not on every
+                    // recomposition this block happens to run for.
                     @Suppress("UNUSED_EXPRESSION")
                     scrollToMatchVersion
                     if (findBarVisible) {
-                        viewModel.currentMatchRange()?.let { range -> view.revealMatch(range) }
+                        // Repainting borders has no focus/selection side effects, so -
+                        // unlike revealMatch - it's safe to just do on every
+                        // recomposition rather than gate it on appliedMatchVersion.
+                        view.applyMatchBorders(viewModel.allMatchRanges(), MATCH_BORDER_COLOR)
+                        if (scrollToMatchVersion != appliedMatchVersion) {
+                            appliedMatchVersion = scrollToMatchVersion
+                            viewModel.currentMatchRange()?.let { range -> view.revealMatch(range) }
+                        }
+                    } else {
+                        view.applyMatchBorders(emptyList(), MATCH_BORDER_COLOR)
                     }
                 }
             )

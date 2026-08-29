@@ -178,6 +178,9 @@ class EditorViewModel : ViewModel() {
     /** The current match's document offsets, for the view to scroll to and select. */
     fun currentMatchRange(): IntRange? = matches.getOrNull(_currentMatchIndex.value)
 
+    /** Every match found by the last [findNext] scan, for the view to outline. */
+    fun allMatchRanges(): List<IntRange> = matches
+
     /**
      * Rescans the whole document from scratch (the doc may have changed since the
      * last tap) and jumps to the nearest match at or after [cursorOffset], wrapping
@@ -298,6 +301,7 @@ class EditorViewModel : ViewModel() {
         recomputeLineIndex()
         val lineCount = lines.size
         styledRange = 0..(WINDOW_MARGIN_LINES * 2).coerceAtMost(lineCount - 1)
+        clearMatches()
         _spanVersion.value++
         _loadVersion.value++
     }

@@ -7,6 +7,7 @@ import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
+import android.view.inputmethod.InputMethodManager
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -218,5 +219,16 @@ class CodeEditorView(context: Context) : ScrollView(context) {
     fun revealMatch(range: IntRange) {
         editText.selectRange(range)
         scrollToOffset(range.first)
+        // requestFocus() alone (done inside selectRange) moves input focus but won't
+        // reliably pop the keyboard when triggered programmatically rather than by a
+        // user touch - show it explicitly so the match is genuinely editable, not
+        // just visually selected while the keyboard stays targeting the find field.
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.showSoftInput(editText, InputMethodManager.SHOW_IMPLICIT)
+    }
+
+    /** Outlines every match in [ranges] - see [HighlightingEditText.applyMatchBorders]. */
+    fun applyMatchBorders(ranges: List<IntRange>, borderColor: Int) {
+        editText.applyMatchBorders(ranges, borderColor)
     }
 }

@@ -1,7 +1,11 @@
 package com.mangocodex
 
 import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Rect
 import android.text.Editable
+import android.text.Layout
 import android.text.Spannable
 import android.text.TextWatcher
 import android.text.style.ForegroundColorSpan
@@ -139,5 +143,86 @@ class HighlightingEditText(context: Context) : AppCompatEditText(context) {
         val end = (range.last + 1).coerceIn(0, length)
         requestFocus()
         setSelection(start, end)
+    }
+
+    override fun onFocusChanged(focused: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
+        super.onFocusChanged(focused, direction, previouslyFocusedRect)
+        if (!focused && selectionStart != selectionEnd) {
+            // Collapse any active selection when focus leaves the editor, so the
+            // "current match" native highlight doesn't linger once you tap away - it
+            // should look identical to every other match (border only, see
+            // applyMatchBorders) until Next is pressed again.
+            setSelection(selectionStart)
+        }
+    }
+
+    // Match ranges to outline, and the paint used to stroke them - repainted by
+    // onDraw on every frame rather than via a Span, since a ReplacementSpan can't be
+    // split across a wrap point (see applyMatchBorders).
+    private var matchBorderRanges: List<IntRange> = emptyList()
+    private val matchBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2.5f
+    }
+
+    /**
+     * Sets the match ranges to outline with a thin rectangle - every match gets this,
+     * including the current one (which also gets the native text selection on top
+     * while focused). Drawn per *visual* line (see [onDraw]/[drawMatchBorder]) so a
+     * match that word-wraps renders as two distinct boxes - one per line segment -
+     * rather than one box straddling the wrap point the way a Span-based approach
+     * would.
+     */
+    fun applyMatchBorders(ranges: List<IntRange>, borderColor: Int) {
+        matchBorderRanges = ranges
+        matchBorderPaint.color = borderColor
+        invalidate()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val currentLayout = layout
+        if (currentLayout != null && matchBorderRanges.isNotEmpty()) {
+            for (range in matchBorderRanges) {
+                drawMatchBorder(canvas, currentLayout, range)
+            }
+        }
+    }
+
+    /** Draws one rectangle per visual line that [range] touches. */
+    private fun drawMatchBorder(canvas: Canvas, layout: Layout, range: IntRange) {
+        val length = text?.length ?: return
+        val start = range.first.coerceIn(0, length)
+        val end = (range.last + 1).coerceIn(0, length)
+        if (start >= end) return
+
+        // These are the same offsets TextView itself uses to translate Layout-space
+        // coordinates into this view's onDraw canvas space.
+        val offsetX = totalPaddingLeft.toFloat()
+        val offsetY = totalPaddingTop.toFloat()
+
+        val firstLine = layout.getLineForOffset(start)
+        val lastLine = layout.getLineForOffset(end - 1)
+
+        for (line in firstLine..lastLine) {
+            val lineStart = layout.getLineStart(line)
+            val lineEnd = layout.getLineEnd(line)
+            val segStart = start.coerceAtLeast(lineStart)
+            val segEnd = end.coerceAtMost(lineEnd)
+            if (segStart >= segEnd) continue
+
+            val left = layout.getPrimaryHorizontal(segStart)
+            val right = layout.getPrimaryHorizontal(segEnd)
+            val top = layout.getLineTop(line).toFloat()
+            val bottom = layout.getLineBottom(line).toFloat()
+
+            canvas.drawRect(
+                offsetX + left,
+                offsetY + top + 1f,
+                offsetX + right,
+                offsetY + bottom - 1f,
+                matchBorderPaint
+            )
+        }
     }
 }

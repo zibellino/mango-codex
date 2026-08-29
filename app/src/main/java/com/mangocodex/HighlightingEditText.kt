@@ -100,7 +100,8 @@ class HighlightingEditText(context: Context) : AppCompatEditText(context) {
         val editable = text ?: return
         val length = editable.length
 
-        a  try {
+        suppressWatcher = true
+        try {
             val existing = editable.getSpans(0, length, ForegroundColorSpan::class.java)
             for (span in existing) editable.removeSpan(span)
 

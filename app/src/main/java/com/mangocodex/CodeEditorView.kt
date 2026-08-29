@@ -2,6 +2,7 @@ package com.mangocodex
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.text.InputType
 import android.util.TypedValue
@@ -37,6 +38,38 @@ class CodeEditorView(context: Context) : ScrollView(context) {
     var onScrollChangedListener: (() -> Unit)? = null
 
     private val density = context.resources.displayMetrics.density
+
+    // How much of this view's bottom edge is currently covered by the on-screen
+    // keyboard, tracked via the window's actual visible frame rather than relying on
+    // layout resize (which may lag behind, or never happen at all under
+    // adjustPan/adjustNothing) or a fixed assumption about IME height.
+    private var keyboardInsetPx = 0
+    private val windowVisibleFrame = Rect()
+
+    // Height of any Compose overlay (the find/replace bar) sitting above the keyboard
+    // - set externally via setBottomOverlayHeight, since that content isn't part of
+    // this View's own hierarchy and so isn't reflected in the window frame at all.
+    private var bottomOverlayHeightPx = 0
+
+    private val globalLayoutListener = android.view.ViewTreeObserver.OnGlobalLayoutListener {
+        rootView.getWindowVisibleDisplayFrame(windowVisibleFrame)
+        keyboardInsetPx = (rootView.height - windowVisibleFrame.bottom).coerceAtLeast(0)
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        viewTreeObserver.addOnGlobalLayoutListener(globalLayoutListener)
+    }
+
+    override fun onDetachedFromWindow() {
+        viewTreeObserver.removeOnGlobalLayoutListener(globalLayoutListener)
+        super.onDetachedFromWindow()
+    }
+
+    /** Reserves extra space at the bottom of the viewport - e.g. for the find bar sitting above the keyboard. */
+    fun setBottomOverlayHeight(px: Int) {
+        bottomOverlayHeightPx = px
+    }
 
     init {
         isFillViewport = true
@@ -199,7 +232,7 @@ class CodeEditorView(context: Context) : ScrollView(context) {
         return startOffset to endOffset
     }
 
-    /** Scrolls just enough to bring the line containing [offset] into view. */
+    /** Scrolls just enough to bring the line containing [offset] into view, accounting for the keyboard and any bottom overlay (see [setBottomOverlayHeight]). */
     fun scrollToOffset(offset: Int) {
         val layout = editText.layout ?: return
         val length = editText.text?.length ?: 0
@@ -208,10 +241,11 @@ class CodeEditorView(context: Context) : ScrollView(context) {
         val lineTop = layout.getLineTop(line) + editText.paddingTop
         val lineBottom = layout.getLineBottom(line) + editText.paddingTop
         val visibleTop = scrollY
-        val visibleBottom = scrollY + height
+        val bottomObstruction = keyboardInsetPx + bottomOverlayHeightPx
+        val visibleBottom = scrollY + height - bottomObstruction
         when {
             lineTop < visibleTop -> scrollTo(0, lineTop)
-            lineBottom > visibleBottom -> scrollTo(0, (lineBottom - height).coerceAtLeast(0))
+            lineBottom > visibleBottom -> scrollTo(0, (lineBottom - height + bottomObstruction).coerceAtLeast(0))
         }
     }
 
@@ -225,6 +259,11 @@ class CodeEditorView(context: Context) : ScrollView(context) {
         // just visually selected while the keyboard stays targeting the find field.
         val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
         imm?.showSoftInput(editText, InputMethodManager.SHOW_IMPLICIT)
+        // If the keyboard wasn't already up, showing it is asynchronous - the scroll
+        // above just happened with keyboardInsetPx still at its old (possibly zero)
+        // value. Re-scroll shortly after, once the window has actually resized and
+        // the global layout listener has picked up the real inset.
+        postDelayed({ scrollToOffset(range.first) }, 250)
     }
 
     /** Outlines every match in [ranges] - see [HighlightingEditText.applyMatchBorders]. */

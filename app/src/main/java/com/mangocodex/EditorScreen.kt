@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -103,6 +104,11 @@ fun EditorScreen(viewModel: EditorViewModel) {
     // open would re-select and re-scroll back to the last match, and would keep
     // stealing focus away from wherever the user just tapped or typed.
     var appliedMatchVersion by remember { mutableStateOf(-1) }
+
+    // The find bar's actual measured height (it sits above the keyboard via its own
+    // imePadding), fed into the editor view so scrollToOffset knows how much of the
+    // bottom of the viewport is obstructed and doesn't reveal a match behind it.
+    var findBarHeightPx by remember { mutableStateOf(0) }
 
     Scaffold(
         topBar = {
@@ -306,6 +312,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                     @Suppress("UNUSED_EXPRESSION")
                     scrollToMatchVersion
                     if (findBarVisible) {
+                        view.setBottomOverlayHeight(findBarHeightPx)
                         // Repainting borders has no focus/selection side effects, so -
                         // unlike revealMatch - it's safe to just do on every
                         // recomposition rather than gate it on appliedMatchVersion.
@@ -315,6 +322,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                             viewModel.currentMatchRange()?.let { range -> view.revealMatch(range) }
                         }
                     } else {
+                        view.setBottomOverlayHeight(0)
                         view.applyMatchBorders(emptyList(), MATCH_BORDER_COLOR)
                     }
                 }
@@ -327,7 +335,8 @@ fun EditorScreen(viewModel: EditorViewModel) {
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .imePadding(),
+                        .imePadding()
+                        .onGloballyPositioned { coordinates -> findBarHeightPx = coordinates.size.height },
                     color = Color(0xFF252526),
                     tonalElevation = 8.dp,
                     shadowElevation = 8.dp

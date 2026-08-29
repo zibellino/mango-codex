@@ -178,21 +178,28 @@ class HighlightingEditText(context: Context) : AppCompatEditText(context) {
         }
     }
 
-    // Match ranges to outline, and the paint used to stroke them - repainted by
-    // onDraw on every frame rather than via a Span, since a ReplacementSpan can't be
-    // split across a wrap point (see applyMatchBorders).
+    // Match ranges to outline, and the paint used to stroke them - see
+    // applyMatchBorders for why this is a custom onDraw pass rather than a Span.
     private var matchBorderRanges: List<IntRange> = emptyList()
     private val matchBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 2f
     }
     private val matchBorderRadius = 2f * resources.displayMetrics.density
-    private val matchBorderRect = RectF()
+
+    // Precomputed rectangles for the current matchBorderRanges, rebuilt only when the
+    // match set or the text layout actually changes - not on every single onDraw call
+    // (which happens far more often than that, e.g. on every cursor blink). Each
+    // rectangle costs a handful of Layout queries to compute; redoing that for every
+    // match on every frame, rather than once per real change, was the actual source
+    // of visible lag while typing in a file with many matches.
+    private var cachedMatchBorderRects: List<RectF>? = null
+    private var cachedMatchBorderLayout: Layout? = null
 
     /**
      * Sets the match ranges to outline with a thin rectangle - every match gets this,
      * including the current one (which also gets the native text selection on top
-     * while focused). Drawn per *visual* line (see [onDraw]/[drawMatchBorder]) so a
+     * while focused). Drawn per *visual* line (see [buildMatchBorderRects]) so a
      * match that word-wraps renders as two distinct boxes - one per line segment -
      * rather than one box straddling the wrap point the way a Span-based approach
      * would.
@@ -200,6 +207,7 @@ class HighlightingEditText(context: Context) : AppCompatEditText(context) {
     fun applyMatchBorders(ranges: List<IntRange>, borderColor: Int) {
         matchBorderRanges = ranges
         matchBorderPaint.color = borderColor
+        cachedMatchBorderRects = null // force a rebuild against the new ranges
         invalidate()
     }
 
@@ -207,52 +215,56 @@ class HighlightingEditText(context: Context) : AppCompatEditText(context) {
         super.onDraw(canvas)
         val currentLayout = layout
         if (currentLayout != null && matchBorderRanges.isNotEmpty()) {
-            for (range in matchBorderRanges) {
-                drawMatchBorder(canvas, currentLayout, range)
+            var rects = cachedMatchBorderRects
+            if (rects == null || cachedMatchBorderLayout !== currentLayout) {
+                rects = buildMatchBorderRects(currentLayout)
+                cachedMatchBorderRects = rects
+                cachedMatchBorderLayout = currentLayout
+            }
+            for (rect in rects) {
+                canvas.drawRoundRect(rect, matchBorderRadius, matchBorderRadius, matchBorderPaint)
             }
         }
     }
 
-    /** Draws one rectangle per visual line that [range] touches. */
-    private fun drawMatchBorder(canvas: Canvas, layout: Layout, range: IntRange) {
-        val length = text?.length ?: return
-        val start = range.first.coerceIn(0, length)
-        val end = (range.last + 1).coerceIn(0, length)
-        if (start >= end) return
-
+    /** Computes one rectangle per visual line that each match range touches. */
+    private fun buildMatchBorderRects(layout: Layout): List<RectF> {
+        val length = text?.length ?: return emptyList()
         // These are the same offsets TextView itself uses to translate Layout-space
         // coordinates into this view's onDraw canvas space.
         val offsetX = totalPaddingLeft.toFloat()
         val offsetY = totalPaddingTop.toFloat()
+        val fontMetrics = paint.fontMetricsInt
+        val rects = ArrayList<RectF>(matchBorderRanges.size)
 
-        val firstLine = layout.getLineForOffset(start)
-        val lastLine = layout.getLineForOffset(end - 1)
+        for (range in matchBorderRanges) {
+            val start = range.first.coerceIn(0, length)
+            val end = (range.last + 1).coerceIn(0, length)
+            if (start >= end) continue
 
-        for (line in firstLine..lastLine) {
-            val lineStart = layout.getLineStart(line)
-            val lineEnd = layout.getLineEnd(line)
-            val segStart = start.coerceAtLeast(lineStart)
-            val segEnd = end.coerceAtMost(lineEnd)
-            if (segStart >= segEnd) continue
+            val firstLine = layout.getLineForOffset(start)
+            val lastLine = layout.getLineForOffset(end - 1)
 
-            val left = layout.getPrimaryHorizontal(segStart)
-            val right = layout.getPrimaryHorizontal(segEnd)
-            // Sized off font metrics around the baseline (not getLineTop/getLineBottom
-            // directly), since those include the extra inter-line spacing set on this
-            // EditText - using them would make the box taller than the glyphs and
-            // leave a visible gap at the bottom.
-            val baseline = layout.getLineBaseline(line)
-            val fontMetrics = paint.fontMetricsInt
-            val top = baseline + fontMetrics.ascent
-            val bottom = baseline + fontMetrics.descent
+            for (line in firstLine..lastLine) {
+                val lineStart = layout.getLineStart(line)
+                val lineEnd = layout.getLineEnd(line)
+                val segStart = start.coerceAtLeast(lineStart)
+                val segEnd = end.coerceAtMost(lineEnd)
+                if (segStart >= segEnd) continue
 
-            matchBorderRect.set(
-                offsetX + left,
-                offsetY + top,
-                offsetX + right,
-                offsetY + bottom
-            )
-            canvas.drawRoundRect(matchBorderRect, matchBorderRadius, matchBorderRadius, matchBorderPaint)
+                val left = layout.getPrimaryHorizontal(segStart)
+                val right = layout.getPrimaryHorizontal(segEnd)
+                // Sized off font metrics around the baseline (not getLineTop/
+                // getLineBottom directly), since those include the extra inter-line
+                // spacing set on this EditText - using them would make the box taller
+                // than the glyphs and leave a visible gap at the bottom.
+                val baseline = layout.getLineBaseline(line)
+                val top = baseline + fontMetrics.ascent
+                val bottom = baseline + fontMetrics.descent
+
+                rects.add(RectF(offsetX + left, offsetY + top, offsetX + right, offsetY + bottom))
+            }
         }
+        return rects
     }
 }

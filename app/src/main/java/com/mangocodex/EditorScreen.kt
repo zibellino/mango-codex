@@ -53,6 +53,9 @@ fun EditorScreen(viewModel: EditorViewModel) {
     val findQuery by viewModel.findQuery.collectAsState()
     val replaceQuery by viewModel.replaceQuery.collectAsState()
     val useRegex by viewModel.useRegex.collectAsState()
+    val matchCount by viewModel.matchCount.collectAsState()
+    val currentMatchIndex by viewModel.currentMatchIndex.collectAsState()
+    val scrollToMatchVersion by viewModel.scrollToMatchVersion.collectAsState()
     val spanVersion by viewModel.spanVersion.collectAsState()
     val loadVersion by viewModel.loadVersion.collectAsState()
 
@@ -81,6 +84,11 @@ fun EditorScreen(viewModel: EditorViewModel) {
     // typing - the EditText already IS the source of that text, so re-setting it
     // would just reset the cursor mid-keystroke.
     var appliedLoadVersion by remember { mutableStateOf(-1) }
+
+    // Captured so the "Next" button can read the *current* cursor position at tap
+    // time - find navigation is driven by where the cursor actually is right now,
+    // not by any state the ViewModel tracks separately.
+    var editorViewRef by remember { mutableStateOf<CodeEditorView?>(null) }
 
     Scaffold(
         topBar = {
@@ -251,6 +259,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
 
                         editText.requestFocus()
                     }
+                        .also { editorViewRef = it }
                 },
                 update = { view ->
                     if (loadVersion != appliedLoadVersion) {
@@ -274,11 +283,21 @@ fun EditorScreen(viewModel: EditorViewModel) {
                     @Suppress("UNUSED_EXPRESSION")
                     spanVersion
                     view.editText.applyHighlightSpans(viewModel.computeSpans())
+
+                    // Reading scrollToMatchVersion here is what makes this update block
+                    // rerun on every find-navigation jump (typing a new query, opening
+                    // the bar, or pressing Next), so the current match gets selected and
+                    // scrolled into view right after the ViewModel recomputes it.
+                    @Suppress("UNUSED_EXPRESSION")
+                    scrollToMatchVersion
+                    if (findBarVisible) {
+                        viewModel.currentMatchRange()?.let { range -> view.revealMatch(range) }
+                    }
                 }
             )
 
-            // Find/Replace bar (layout pass - Next/Replace/All/regex are not wired to
-            // real search logic yet, that's the next step).
+            // Find/Replace bar - find is wired up (matches, counter, Next); regex and
+            // replace/replace-all are still no-ops, next steps.
             if (findBarVisible) {
                 Surface(
                     modifier = Modifier
@@ -302,7 +321,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                 modifier = Modifier.weight(1f),
                                 trailing = {
                                     Text(
-                                        text = "0/0",
+                                        text = if (findQuery.isEmpty()) "" else "${(currentMatchIndex + 1).coerceAtLeast(0)}/$matchCount",
                                         color = FG.copy(alpha = 0.5f),
                                         fontSize = 12.sp
                                     )
@@ -310,7 +329,10 @@ fun EditorScreen(viewModel: EditorViewModel) {
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             CompactButton(
-                                onClick = { /* TODO: find next */ },
+                                onClick = {
+                                    val cursor = editorViewRef?.editText?.selectionEnd ?: 0
+                                    viewModel.findNext(cursor)
+                                },
                                 modifier = Modifier.width(64.dp),
                                 contentAlignment = Alignment.CenterStart
                             ) {

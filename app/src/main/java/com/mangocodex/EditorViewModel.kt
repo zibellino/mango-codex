@@ -111,14 +111,21 @@ class EditorViewModel : ViewModel() {
 
     fun openFindBar() {
         _findBarVisible.value = true
+        clearMatches()
     }
 
     fun closeFindBar() {
         _findBarVisible.value = false
+        clearMatches()
     }
 
     fun setFindQuery(query: String) {
         _findQuery.value = query
+        // Don't search here - searching happens only when Next is pressed, so typing
+        // never scans the document. The stale count/selection from a previous query
+        // is cleared so the counter doesn't show results for text that's no longer
+        // in the field.
+        clearMatches()
     }
 
     fun setReplaceQuery(query: String) {
@@ -130,6 +137,63 @@ class EditorViewModel : ViewModel() {
 
     fun toggleRegex() {
         _useRegex.value = !_useRegex.value
+    }
+
+    // Only ever populated by findNext() - a fresh scan on every tap, since the
+    // document may have been edited since the previous tap. Held as a plain field
+    // rather than a StateFlow since only its *count* and *current index* need to
+    // drive recomposition; the ranges themselves are only read imperatively by the
+    // view when it reveals the current match.
+    private var matches: List<IntRange> = emptyList()
+
+    private val _matchCount = MutableStateFlow(0)
+    val matchCount: StateFlow<Int> = _matchCount
+
+    private val _currentMatchIndex = MutableStateFlow(-1)
+    val currentMatchIndex: StateFlow<Int> = _currentMatchIndex
+
+    // Bumped whenever the view should scroll to and select the current match.
+    private val _scrollToMatchVersion = MutableStateFlow(0)
+    val scrollToMatchVersion: StateFlow<Int> = _scrollToMatchVersion
+
+    private fun clearMatches() {
+        matches = emptyList()
+        _matchCount.value = 0
+        _currentMatchIndex.value = -1
+    }
+
+    private fun findMatches(query: String, text: String): List<IntRange> {
+        if (query.isEmpty()) return emptyList()
+        val result = ArrayList<IntRange>()
+        var idx = 0
+        while (idx <= text.length) {
+            val found = text.indexOf(query, idx, ignoreCase = true)
+            if (found == -1) break
+            result.add(found until (found + query.length))
+            idx = found + query.length
+        }
+        return result
+    }
+
+    /** The current match's document offsets, for the view to scroll to and select. */
+    fun currentMatchRange(): IntRange? = matches.getOrNull(_currentMatchIndex.value)
+
+    /**
+     * Rescans the whole document from scratch (the doc may have changed since the
+     * last tap) and jumps to the nearest match at or after [cursorOffset], wrapping
+     * to the first match if none is found after it.
+     */
+    fun findNext(cursorOffset: Int) {
+        val freshMatches = findMatches(_findQuery.value, _text.value)
+        matches = freshMatches
+        _matchCount.value = freshMatches.size
+        if (freshMatches.isEmpty()) {
+            _currentMatchIndex.value = -1
+            return
+        }
+        val idx = freshMatches.indexOfFirst { it.first >= cursorOffset }.let { if (it == -1) 0 else it }
+        _currentMatchIndex.value = idx
+        _scrollToMatchVersion.value++
     }
 
     fun newFile() {

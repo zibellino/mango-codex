@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.RectF
 import android.text.Editable
 import android.text.Layout
 import android.text.Spannable
@@ -162,8 +163,10 @@ class HighlightingEditText(context: Context) : AppCompatEditText(context) {
     private var matchBorderRanges: List<IntRange> = emptyList()
     private val matchBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 2.5f
+        strokeWidth = 2f
     }
+    private val matchBorderRadius = 2f * resources.displayMetrics.density
+    private val matchBorderRect = RectF()
 
     /**
      * Sets the match ranges to outline with a thin rectangle - every match gets this,
@@ -213,16 +216,22 @@ class HighlightingEditText(context: Context) : AppCompatEditText(context) {
 
             val left = layout.getPrimaryHorizontal(segStart)
             val right = layout.getPrimaryHorizontal(segEnd)
-            val top = layout.getLineTop(line).toFloat()
-            val bottom = layout.getLineBottom(line).toFloat()
+            // Sized off font metrics around the baseline (not getLineTop/getLineBottom
+            // directly), since those include the extra inter-line spacing set on this
+            // EditText - using them would make the box taller than the glyphs and
+            // leave a visible gap at the bottom.
+            val baseline = layout.getLineBaseline(line)
+            val fontMetrics = paint.fontMetricsInt
+            val top = baseline + fontMetrics.ascent
+            val bottom = baseline + fontMetrics.descent
 
-            canvas.drawRect(
+            matchBorderRect.set(
                 offsetX + left,
-                offsetY + top + 1f,
+                offsetY + top,
                 offsetX + right,
-                offsetY + bottom - 1f,
-                matchBorderPaint
+                offsetY + bottom
             )
+            canvas.drawRoundRect(matchBorderRect, matchBorderRadius, matchBorderRadius, matchBorderPaint)
         }
     }
 }

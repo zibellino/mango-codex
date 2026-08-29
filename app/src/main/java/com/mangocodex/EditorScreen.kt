@@ -38,8 +38,10 @@ val BG = Color(0xFF1E1E1E)
 val FG = Color(0xFFD4D4D4)
 
 // Outline color for find matches - distinct from both the syntax-highlight palette
-// and the current match's native (blue-ish) text selection color.
-private val MATCH_BORDER_COLOR = Color(0xFFCC8800).toArgb()
+// and the current match's native (blue-ish) text selection color. Partial alpha and
+// a softer amber (rather than solid, saturated orange) so it reads as a subtle marker
+// rather than competing with the syntax highlighting for attention.
+private val MATCH_BORDER_COLOR = Color(0xB3FFB300).toArgb()
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

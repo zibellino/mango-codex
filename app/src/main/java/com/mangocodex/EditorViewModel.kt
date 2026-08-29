@@ -167,7 +167,7 @@ class EditorViewModel : ViewModel() {
         val result = ArrayList<IntRange>()
         var idx = 0
         while (idx <= text.length) {
-            val found = text.indexOf(query, idx, ignoreCase = true)
+            val found = text.indexOf(query, idx, ignoreCase = false)
             if (found == -1) break
             result.add(found until (found + query.length))
             idx = found + query.length
@@ -293,6 +293,11 @@ class EditorViewModel : ViewModel() {
         _isDirty.value = true
         recomputeLineIndex()
         _spanVersion.value++
+        // The previous match set's offsets are now stale (the edit may have shifted
+        // or invalidated them entirely) and we don't incrementally re-derive them, so
+        // drop them rather than let the border overlay/counter show wrong results
+        // until the next tap of Next re-scans from scratch.
+        clearMatches()
     }
 
     private fun setText(text: String) {

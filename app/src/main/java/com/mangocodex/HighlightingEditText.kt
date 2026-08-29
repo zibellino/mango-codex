@@ -100,8 +100,7 @@ class HighlightingEditText(context: Context) : AppCompatEditText(context) {
         val editable = text ?: return
         val length = editable.length
 
-        suppressWatcher = true
-        try {
+        a  try {
             val existing = editable.getSpans(0, length, ForegroundColorSpan::class.java)
             for (span in existing) editable.removeSpan(span)
 
@@ -137,6 +136,7 @@ class HighlightingEditText(context: Context) : AppCompatEditText(context) {
         val length = text?.length ?: return
         val start = range.first.coerceIn(0, length)
         val end = (range.last + 1).coerceIn(0, length)
+        requestFocus()
         setSelection(start, end)
     }
 }

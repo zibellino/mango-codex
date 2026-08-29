@@ -138,6 +138,8 @@ class HighlightingEditText(context: Context) : AppCompatEditText(context) {
         val start = range.first.coerceIn(0, length)
         val end = (range.last + 1).coerceIn(0, length)
         requestFocus()
-        setSelection(start, end)
+        post {
+            setSelection(start, end)
+        }
     }
 }

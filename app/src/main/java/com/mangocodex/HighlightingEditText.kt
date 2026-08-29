@@ -229,7 +229,8 @@ class HighlightingEditText(context: Context) : AppCompatEditText(context) {
 
     /** Computes one rectangle per visual line that each match range touches. */
     private fun buildMatchBorderRects(layout: Layout): List<RectF> {
-        val length = text?.length ?: return emptyList()
+        val content = text ?: return emptyList()
+        val length = content.length
         // These are the same offsets TextView itself uses to translate Layout-space
         // coordinates into this view's onDraw canvas space.
         val offsetX = totalPaddingLeft.toFloat()
@@ -253,7 +254,16 @@ class HighlightingEditText(context: Context) : AppCompatEditText(context) {
                 if (segStart >= segEnd) continue
 
                 val left = layout.getPrimaryHorizontal(segStart)
-                val right = layout.getPrimaryHorizontal(segEnd)
+                // getPrimaryHorizontal(segEnd) is ambiguous whenever segEnd lands
+                // exactly on the boundary shared by this line's end and the next
+                // line's start (which happens whenever the segment runs up to and
+                // includes a trailing '\n', or ends at a soft-wrap point) - it can
+                // resolve to the *next* line's context and return 0 there, producing
+                // a bogus near-zero-width box back at the start of THIS line instead
+                // of one ending at its actual right edge. Anchoring on segEnd - 1
+                // (always strictly inside this line, so unambiguous) plus that one
+                // character's own measured width sidesteps the boundary entirely.
+                val right = layout.getPrimaryHorizontal(segEnd - 1) + paint.measureText(content, segEnd - 1, segEnd)
                 // Sized off font metrics around the baseline (not getLineTop/
                 // getLineBottom directly), since those include the extra inter-line
                 // spacing set on this EditText - using them would make the box taller

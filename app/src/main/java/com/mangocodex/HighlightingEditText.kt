@@ -27,8 +27,10 @@ import androidx.compose.ui.graphics.toArgb
  */
 class HighlightingEditText(context: Context) : AppCompatEditText(context) {
 
-    /** Fired with the full text on every real (user-driven) edit. */
-    var onTextChangedListener: ((String) -> Unit)? = null
+    /** Fired with the full text on every real (user-driven) edit, plus the raw edit
+     *  region (start, before, count) so listeners can incrementally adjust their own
+     *  offset-based state (e.g. find-match ranges) instead of invalidating it. */
+    var onTextChangedListener: ((newText: String, start: Int, before: Int, count: Int) -> Unit)? = null
 
     /**
      * When enabled, pressing Enter copies all leading whitespace (spaces/tabs) from
@@ -47,12 +49,21 @@ class HighlightingEditText(context: Context) : AppCompatEditText(context) {
     private var pendingAutoIndent: String? = null
     private var pendingAutoIndentPos: Int = -1
 
+    // The raw edit region reported by this pass through onTextChanged, forwarded to
+    // onTextChangedListener so listeners can shift their own offsets incrementally.
+    private var pendingEditStart: Int = 0
+    private var pendingEditBefore: Int = 0
+    private var pendingEditCount: Int = 0
+
     init {
         addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
 
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 pendingAutoIndent = null
+                pendingEditStart = start
+                pendingEditBefore = before
+                pendingEditCount = count
                 if (suppressWatcher || !autoIndentEnabled) return
                 // Only trigger on a plain single-character newline insertion (a real
                 // Enter keypress) - not on multi-line paste or deletions - so we don't
@@ -89,9 +100,19 @@ class HighlightingEditText(context: Context) : AppCompatEditText(context) {
                     } finally {
                         suppressWatcher = false
                     }
+                    // The auto-indent insert is a second, contiguous edit right after
+                    // the original one (same start, no deletion) - fold its length in
+                    // so listeners see one combined edit region rather than missing
+                    // the extra characters entirely.
+                    pendingEditCount += indent.length
                 }
 
-                onTextChangedListener?.invoke(s?.toString().orEmpty())
+                onTextChangedListener?.invoke(
+                    s?.toString().orEmpty(),
+                    pendingEditStart,
+                    pendingEditBefore,
+                    pendingEditCount
+                )
             }
         })
     }

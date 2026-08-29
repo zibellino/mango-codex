@@ -162,6 +162,38 @@ class EditorViewModel : ViewModel() {
         _currentMatchIndex.value = -1
     }
 
+    /**
+     * Shifts/drops match ranges to reflect an edit at [start] that replaced [before]
+     * characters with [count] new ones, instead of invalidating the whole match set -
+     * so ordinary typing elsewhere in the document doesn't force a re-tap of Next.
+     * A match entirely before the edit is untouched; one entirely after it shifts by
+     * the length delta; one the edit actually touches is dropped, since its content
+     * (and therefore whether it's still a match at all) is no longer known without a
+     * rescan.
+     */
+    private fun applyEditToMatches(start: Int, before: Int, count: Int) {
+        if (matches.isEmpty()) return
+        val editOldEnd = start + before
+        val delta = count - before
+        val oldCurrent = _currentMatchIndex.value
+        var newCurrent = -1
+        val updated = ArrayList<IntRange>(matches.size)
+        for ((i, m) in matches.withIndex()) {
+            val shifted = when {
+                m.last < start -> m
+                m.first >= editOldEnd -> IntRange(m.first + delta, m.last + delta)
+                else -> null
+            }
+            if (shifted != null) {
+                if (i == oldCurrent) newCurrent = updated.size
+                updated.add(shifted)
+            }
+        }
+        matches = updated
+        _matchCount.value = matches.size
+        _currentMatchIndex.value = newCurrent
+    }
+
     private fun findMatches(query: String, text: String): List<IntRange> {
         if (query.isEmpty()) return emptyList()
         val result = ArrayList<IntRange>()
@@ -285,19 +317,17 @@ class EditorViewModel : ViewModel() {
     /**
      * Called by the view's TextWatcher on every edit. The EditText is the source of
      * truth for cursor/selection; this only keeps content (for save/dirty) and the
-     * line index (for windowed highlighting) in sync with it.
+     * line index (for windowed highlighting) in sync with it. [start]/[before]/[count]
+     * describe the raw edit region and are used to shift find-match offsets in place
+     * (see [applyEditToMatches]) rather than invalidating them on every keystroke.
      */
-    fun onTextChanged(newText: String) {
+    fun onTextChanged(newText: String, start: Int, before: Int, count: Int) {
         if (newText == _text.value) return
         _text.value = newText
         _isDirty.value = true
         recomputeLineIndex()
         _spanVersion.value++
-        // The previous match set's offsets are now stale (the edit may have shifted
-        // or invalidated them entirely) and we don't incrementally re-derive them, so
-        // drop them rather than let the border overlay/counter show wrong results
-        // until the next tap of Next re-scans from scratch.
-        clearMatches()
+        applyEditToMatches(start, before, count)
     }
 
     private fun setText(text: String) {

@@ -250,7 +250,9 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         setAutoIndent(autoIndent)
                         updateGutterWidth(text.count { it == '\n' } + 1)
 
-                        editText.onTextChangedListener = { newText -> viewModel.onTextChanged(newText) }
+                        editText.onTextChangedListener = { newText, start, before, count ->
+                            viewModel.onTextChanged(newText, start, before, count)
+                        }
                         editText.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
                             // Layout changed (text edit reflow, width change, wrap toggle) -
                             // resync the gutter to match the new line positions.

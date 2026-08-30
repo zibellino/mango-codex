@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -438,7 +439,7 @@ private fun CompactTextField(
         contentAlignment = Alignment.CenterStart
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Box(modifier = Modifier.weight(1f)) {
+            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 if (value.isEmpty()) {
                     Text(placeholder, color = FG.copy(alpha = 0.4f), fontSize = 12.sp)
                 }
@@ -450,6 +451,7 @@ private fun CompactTextField(
                     cursorBrush = SolidColor(FG),
                     modifier = Modifier
                         .fillMaxWidth()
+                        .fillMaxHeight()
                         .verticalScroll(scrollState)
                 )
             }

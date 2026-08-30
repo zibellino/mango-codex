@@ -8,6 +8,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -412,8 +414,12 @@ fun EditorScreen(viewModel: EditorViewModel) {
 }
 
 /**
- * A single-line text field with tighter chrome than Material3's OutlinedTextField,
- * whose default label/padding makes it too tall for a compact find/replace bar.
+ * A text field with tighter chrome than Material3's OutlinedTextField (whose default
+ * label/padding makes it too tall for a compact find/replace bar), and a fixed
+ * on-screen height regardless of content. Multi-line input (typed newlines or a
+ * multi-line paste) is fully accepted - the field just becomes an internally
+ * scrollable one-row-tall window into it, via verticalScroll, rather than growing the
+ * bar or clipping/stripping the extra lines outright the way singleLine = true would.
  */
 @Composable
 private fun CompactTextField(
@@ -423,6 +429,7 @@ private fun CompactTextField(
     modifier: Modifier = Modifier,
     trailing: (@Composable () -> Unit)? = null
 ) {
+    val scrollState = rememberScrollState()
     Box(
         modifier = modifier
             .height(32.dp)
@@ -438,10 +445,12 @@ private fun CompactTextField(
                 BasicTextField(
                     value = value,
                     onValueChange = onValueChange,
-                    singleLine = true,
+                    singleLine = false,
                     textStyle = TextStyle(color = FG, fontSize = 12.sp),
                     cursorBrush = SolidColor(FG),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(scrollState)
                 )
             }
             if (trailing != null) {

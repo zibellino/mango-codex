@@ -27,6 +27,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
@@ -421,6 +422,15 @@ fun EditorScreen(viewModel: EditorViewModel) {
  * multi-line paste) is fully accepted - the field just becomes an internally
  * scrollable one-row-tall window into it, via verticalScroll, rather than growing the
  * bar or clipping/stripping the extra lines outright the way singleLine = true would.
+ *
+ * The exact height and clipToBounds() live directly on this Row (the component's own
+ * root), rather than being left to propagate down through inner Box/BasicTextField
+ * layers - that propagation turned out not to reliably bound BasicTextField's own
+ * measurement when singleLine = false, letting it (and this whole component, and
+ * everything below it in the find bar) grow instead of scrolling internally.
+ * clipToBounds() is the hard backstop: even if the field's internal measurement still
+ * wants more height than 32dp, it's forcibly cut off right here instead of pushing
+ * the rest of the bar down.
  */
 @Composable
 private fun CompactTextField(
@@ -431,34 +441,32 @@ private fun CompactTextField(
     trailing: (@Composable () -> Unit)? = null
 ) {
     val scrollState = rememberScrollState()
-    Box(
+    Row(
         modifier = modifier
             .height(32.dp)
             .border(1.dp, Color(0xFF3C3C3C), RoundedCornerShape(4.dp))
+            .clipToBounds()
             .padding(horizontal = 8.dp),
-        contentAlignment = Alignment.CenterStart
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                if (value.isEmpty()) {
-                    Text(placeholder, color = FG.copy(alpha = 0.4f), fontSize = 12.sp)
-                }
-                BasicTextField(
-                    value = value,
-                    onValueChange = onValueChange,
-                    singleLine = false,
-                    textStyle = TextStyle(color = FG, fontSize = 12.sp),
-                    cursorBrush = SolidColor(FG),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight()
-                        .verticalScroll(scrollState)
-                )
+        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+            if (value.isEmpty()) {
+                Text(placeholder, color = FG.copy(alpha = 0.4f), fontSize = 12.sp)
             }
-            if (trailing != null) {
-                Spacer(modifier = Modifier.width(6.dp))
-                trailing()
-            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = false,
+                textStyle = TextStyle(color = FG, fontSize = 12.sp),
+                cursorBrush = SolidColor(FG),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState)
+            )
+        }
+        if (trailing != null) {
+            Spacer(modifier = Modifier.width(6.dp))
+            trailing()
         }
     }
 }

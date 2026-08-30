@@ -446,18 +446,18 @@ private fun CompactTextField(
             .height(32.dp)
             .border(1.dp, Color(0xFF3C3C3C), RoundedCornerShape(4.dp))
             .clipToBounds()
-            .padding(horizontal = 8.dp),
+            .padding(horizontal = 8.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
             if (value.isEmpty()) {
-                Text(placeholder, color = FG.copy(alpha = 0.4f), fontSize = 12.sp)
+                Text(placeholder, color = FG.copy(alpha = 0.4f), fontSize = 14.sp)
             }
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
                 singleLine = false,
-                textStyle = TextStyle(color = FG, fontSize = 12.sp),
+                textStyle = TextStyle(color = FG, fontSize = 14.sp),
                 cursorBrush = SolidColor(FG),
                 modifier = Modifier
                     .fillMaxWidth()

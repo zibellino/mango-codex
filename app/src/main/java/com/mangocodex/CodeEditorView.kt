@@ -125,7 +125,16 @@ class CodeEditorView(context: Context) : ScrollView(context) {
         row.orientation = LinearLayout.HORIZONTAL
         row.addView(
             gutter,
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            // MATCH_PARENT height (not WRAP_CONTENT) deliberately - WRAP_CONTENT
+            // would size the gutter off its own text, which starts empty and is only
+            // populated later via refreshLineNumbers(). That left the gutter's box
+            // just one line tall until something else incidentally forced a later
+            // re-layout (e.g. focusing the field), even though its text content was
+            // already correct by then - the box itself just hadn't grown to show it.
+            // Matching the row's own height (already correct from frame one, since
+            // it's driven by the taller editText/horizontalScroller side) sidesteps
+            // that dependency entirely.
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.MATCH_PARENT)
         )
         row.addView(
             divider,

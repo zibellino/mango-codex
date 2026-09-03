@@ -8,6 +8,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
@@ -33,8 +35,10 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -431,6 +435,13 @@ fun EditorScreen(viewModel: EditorViewModel) {
  * clipToBounds() is the hard backstop: even if the field's internal measurement still
  * wants more height than 32dp, it's forcibly cut off right here instead of pushing
  * the rest of the bar down.
+ *
+ * Internally this tracks a TextFieldValue (not just the plain String the caller
+ * deals in) purely to see selection/cursor changes - including dragging the
+ * selection handle, which moves the cursor without the text itself changing, so
+ * plain onValueChange(String) never fires for it. Whenever that selection moves, a
+ * BringIntoViewRequester nudges the scroll position to keep the cursor visible,
+ * which the plain-String overload has no way to do at all.
  */
 @Composable
 private fun CompactTextField(
@@ -441,6 +452,32 @@ private fun CompactTextField(
     trailing: (@Composable () -> Unit)? = null
 ) {
     val scrollState = rememberScrollState()
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+
+    var textFieldValue by remember { mutableStateOf(TextFieldValue(value)) }
+    // Resync only when the external value actually diverges from what we already
+    // have (e.g. an external reset) - NOT on every recomposition, since that would
+    // include the normal round-trip of our own onValueChange flowing back down as a
+    // new `value`, which would otherwise wipe out the selection/cursor position on
+    // every single keystroke.
+    if (textFieldValue.text != value) {
+        textFieldValue = TextFieldValue(value)
+    }
+
+    var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+    // Keyed only on selection - not on textLayoutResult too. onTextLayout can fire
+    // again on plain recomposition (e.g. while actively scrolling) with no real
+    // cursor movement at all; keying on it as well would restart this effect on
+    // every such firing and yank the view back to the cursor mid-pan. Reading
+    // textLayoutResult's current value inside the effect (rather than as a key) is
+    // enough - we want the freshest layout available at the moment the selection
+    // itself changes, not to react to the layout changing on its own.
+    LaunchedEffect(textFieldValue.selection) {
+        val layout = textLayoutResult ?: return@LaunchedEffect
+        val cursorOffset = textFieldValue.selection.end.coerceIn(0, layout.layoutInput.text.length)
+        bringIntoViewRequester.bringIntoView(layout.getCursorRect(cursorOffset))
+    }
+
     Row(
         modifier = modifier
             .height(32.dp)
@@ -454,14 +491,20 @@ private fun CompactTextField(
                 Text(placeholder, color = FG.copy(alpha = 0.4f), fontSize = 14.sp)
             }
             BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
+                value = textFieldValue,
+                onValueChange = { newValue ->
+                    val textChanged = newValue.text != textFieldValue.text
+                    textFieldValue = newValue
+                    if (textChanged) onValueChange(newValue.text)
+                },
                 singleLine = false,
                 textStyle = TextStyle(color = FG, fontSize = 14.sp),
                 cursorBrush = SolidColor(FG),
+                onTextLayout = { textLayoutResult = it },
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(scrollState)
+                    .bringIntoViewRequester(bringIntoViewRequester)
             )
         }
         if (trailing != null) {

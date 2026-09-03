@@ -231,6 +231,66 @@ class EditorViewModel : ViewModel() {
         _scrollToMatchVersion.value++
     }
 
+    /**
+     * Replaces just the current match with the replace field's text. Reuses the exact
+     * same accounting a normal typed edit goes through (dirty flag, line index,
+     * spans, and - critically - [applyEditToMatches]) so every *other* match shifts
+     * correctly and stays valid; only the just-replaced one is dropped, since its
+     * content no longer matches by definition. Lands on the next remaining match
+     * (wrapping to the first) so repeated taps of Replace walk forward through the
+     * document, mirroring [findNext].
+     */
+    fun replaceCurrent() {
+        val match = matches.getOrNull(_currentMatchIndex.value) ?: return
+        val replacement = _replaceQuery.value
+        val old = _text.value
+        val start = match.first
+        val before = match.last + 1 - match.first
+        val newText = old.substring(0, start) + replacement + old.substring(start + before)
+
+        pushProgrammaticEdit(newText)
+        _isDirty.value = true
+        applyEditToMatches(start, before, replacement.length)
+
+        val replacedEnd = start + replacement.length
+        val nextIdx = matches.indexOfFirst { it.first >= replacedEnd }
+        if (matches.isNotEmpty()) {
+            _currentMatchIndex.value = if (nextIdx != -1) nextIdx else 0
+            _scrollToMatchVersion.value++
+        }
+    }
+
+    /**
+     * Replaces every match with the replace field's text in one shot. Always rescans
+     * from scratch first (rather than trusting the possibly-stale cached [matches])
+     * since this is a bulk, less-frequent operation where correctness matters more
+     * than avoiding one extra scan - unlike [replaceCurrent], which runs off whatever
+     * match the user is already looking at. Goes through the same full-reset path as
+     * opening a file ([setText]): matches are cleared (nothing left to point at until
+     * the next tap of Next) and the styled window resets to the top, which is a
+     * reasonable trade-off for a whole-document rewrite.
+     */
+    fun replaceAll() {
+        val query = _findQuery.value
+        if (query.isEmpty()) return
+        val freshMatches = findMatches(query, _text.value)
+        if (freshMatches.isEmpty()) return
+
+        val replacement = _replaceQuery.value
+        val old = _text.value
+        val sb = StringBuilder(old.length)
+        var cursor = 0
+        for (m in freshMatches) {
+            sb.append(old, cursor, m.first)
+            sb.append(replacement)
+            cursor = m.last + 1
+        }
+        sb.append(old, cursor, old.length)
+
+        setText(sb.toString())
+        _isDirty.value = true
+    }
+
     fun newFile() {
         _currentFileUri.value = null
         _currentFileName.value = null
@@ -337,6 +397,22 @@ class EditorViewModel : ViewModel() {
         val lineCount = lines.size
         styledRange = 0..(WINDOW_MARGIN_LINES * 2).coerceAtMost(lineCount - 1)
         clearMatches()
+        _spanVersion.value++
+        _loadVersion.value++
+    }
+
+    /**
+     * Like [setText], but for a single programmatic edit (currently: replaceCurrent)
+     * rather than a full document replacement - so it deliberately skips resetting
+     * styledRange to the top of the file (which would be a jarring, pointless jump
+     * when e.g. replacing a match deep in a large file) and skips clearMatches
+     * (the caller drives match bookkeeping itself via applyEditToMatches, since a
+     * single edit should only invalidate the one match it touches, not all of them).
+     */
+    private fun pushProgrammaticEdit(newText: String) {
+        _text.value = newText
+        tokenCache.clear()
+        recomputeLineIndex()
         _spanVersion.value++
         _loadVersion.value++
     }

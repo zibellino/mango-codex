@@ -399,14 +399,14 @@ fun EditorScreen(viewModel: EditorViewModel) {
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             CompactButton(
-                                onClick = { /* TODO: replace current match */ },
+                                onClick = { viewModel.replaceCurrent() },
                                 modifier = Modifier.width(64.dp),
                                 contentAlignment = Alignment.CenterStart
                             ) {
                                 Text(" Replace", fontSize = 12.sp)
                             }
                             CompactButton(
-                                onClick = { /* TODO: replace all matches */ },
+                                onClick = { viewModel.replaceAll() },
                                 modifier = Modifier.width(40.dp)
                             ) {
                                 Text("All", fontSize = 12.sp)

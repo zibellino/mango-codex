@@ -284,7 +284,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         // A layout pass has to happen first before spans/gutter numbers
                         // can be computed against real line positions.
                         post {
-                            refreshLineNumbers()
+                            refreshLineNumbersWhenReady()
                             editText.applyHighlightSpans(viewModel.computeSpans())
                         }
 
@@ -297,7 +297,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                         view.editText.setTextSilently(text)
                         appliedLoadVersion = loadVersion
                         view.post {
-                            view.refreshLineNumbers()
+                            view.refreshLineNumbersWhenReady()
                             view.editText.applyHighlightSpans(viewModel.computeSpans())
                         }
                     }

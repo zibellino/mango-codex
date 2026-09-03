@@ -209,6 +209,29 @@ class CodeEditorView(context: Context) : ScrollView(context) {
         gutter.text = sb.toString()
     }
 
+    /**
+     * Same as [refreshLineNumbers], but self-correcting for the very first call after
+     * the view is created/gets new text: the EditText's internal Layout can still be
+     * incomplete (or entirely null) for the first frame or two after attachment -
+     * before anything else happens to trigger a later, real layout pass (like the
+     * user focusing the field) - which is why the gutter would otherwise get stuck
+     * showing just "1" on a freshly opened multi-line file until something
+     * incidental fixed it. Retries across a few frames, bounded, until the reported
+     * visual line count actually accounts for every line break in the text (visual
+     * lines can only be >= logical lines, never fewer, once wrapping is accounted
+     * for - so that's a reliable proxy for "the layout is actually done now").
+     */
+    fun refreshLineNumbersWhenReady(maxRetries: Int = 5) {
+        refreshLineNumbers()
+        if (maxRetries <= 0) return
+        val text = editText.text?.toString().orEmpty()
+        val expectedMinLines = text.count { it == '\n' } + 1
+        val layout = editText.layout
+        if (layout == null || layout.lineCount < expectedMinLines) {
+            editText.post { refreshLineNumbersWhenReady(maxRetries - 1) }
+        }
+    }
+
     override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
         super.onScrollChanged(l, t, oldl, oldt)
         onScrollChangedListener?.invoke()

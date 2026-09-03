@@ -137,14 +137,22 @@ class EditorViewModel : ViewModel() {
 
     fun toggleRegex() {
         _useRegex.value = !_useRegex.value
+        // Switching modes changes what the current query even means - a pattern
+        // that's a valid regex may not be a sensible literal string and vice versa -
+        // so the previous match set (and any error) no longer applies until the next
+        // tap of Next re-evaluates the query under the new mode.
+        clearMatches()
     }
+
+    private val _regexError = MutableStateFlow<String?>(null)
+    val regexError: StateFlow<String?> = _regexError
 
     // Only ever populated by findNext() - a fresh scan on every tap, since the
     // document may have been edited since the previous tap. Held as a plain field
     // rather than a StateFlow since only its *count* and *current index* need to
-    // drive recomposition; the ranges themselves are only read imperatively by the
-    // view when it reveals the current match.
-    private var matches: List<IntRange> = emptyList()
+    // drive recomposition; the ranges (and, in regex mode, capture groups for
+    // replacement) are only read imperatively by the view/replace functions.
+    private var matches: List<FindMatch> = emptyList()
 
     private val _matchCount = MutableStateFlow(0)
     val matchCount: StateFlow<Int> = _matchCount
@@ -156,10 +164,21 @@ class EditorViewModel : ViewModel() {
     private val _scrollToMatchVersion = MutableStateFlow(0)
     val scrollToMatchVersion: StateFlow<Int> = _scrollToMatchVersion
 
+    /**
+     * A single match's document offsets plus (in regex mode) its capture groups -
+     * groupValues[0] is always the whole match, matching Kotlin's MatchResult
+     * convention, so $0/$1/$2... in a replacement template line up directly with
+     * index into it. Literal (non-regex) matches populate groupValues with just the
+     * matched text at index 0, for the same reason, though literal mode's replacement
+     * never actually looks at it - see [replaceCurrent]/[replaceAll].
+     */
+    private data class FindMatch(val range: IntRange, val groupValues: List<String>)
+
     private fun clearMatches() {
         matches = emptyList()
         _matchCount.value = 0
         _currentMatchIndex.value = -1
+        _regexError.value = null
     }
 
     /**
@@ -177,16 +196,17 @@ class EditorViewModel : ViewModel() {
         val delta = count - before
         val oldCurrent = _currentMatchIndex.value
         var newCurrent = -1
-        val updated = ArrayList<IntRange>(matches.size)
+        val updated = ArrayList<FindMatch>(matches.size)
         for ((i, m) in matches.withIndex()) {
-            val shifted = when {
-                m.last < start -> m
-                m.first >= editOldEnd -> IntRange(m.first + delta, m.last + delta)
+            val r = m.range
+            val shiftedRange = when {
+                r.last < start -> r
+                r.first >= editOldEnd -> IntRange(r.first + delta, r.last + delta)
                 else -> null
             }
-            if (shifted != null) {
+            if (shiftedRange != null) {
                 if (i == oldCurrent) newCurrent = updated.size
-                updated.add(shifted)
+                updated.add(m.copy(range = shiftedRange))
             }
         }
         matches = updated
@@ -194,24 +214,70 @@ class EditorViewModel : ViewModel() {
         _currentMatchIndex.value = newCurrent
     }
 
-    private fun findMatches(query: String, text: String): List<IntRange> {
-        if (query.isEmpty()) return emptyList()
-        val result = ArrayList<IntRange>()
-        var idx = 0
-        while (idx <= text.length) {
-            val found = text.indexOf(query, idx, ignoreCase = false)
-            if (found == -1) break
-            result.add(found until (found + query.length))
-            idx = found + query.length
+    /**
+     * Finds every match of [query] in [text], either as a literal case-sensitive
+     * substring or (when [useRegex]) as a Kotlin/Java regex. An invalid pattern
+     * yields no matches plus a human-readable error instead of throwing - regex
+     * syntax errors are an expected, recoverable input state here, not a bug.
+     */
+    private fun findMatches(query: String, text: String, useRegex: Boolean): Pair<List<FindMatch>, String?> {
+        if (query.isEmpty()) return emptyList<FindMatch>() to null
+        return if (useRegex) {
+            try {
+                val regex = Regex(query)
+                regex.findAll(text).map { FindMatch(it.range, it.groupValues) }.toList() to null
+            } catch (e: Exception) {
+                emptyList<FindMatch>() to (e.message ?: "Invalid pattern")
+            }
+        } else {
+            val result = ArrayList<FindMatch>()
+            var idx = 0
+            while (idx <= text.length) {
+                val found = text.indexOf(query, idx, ignoreCase = false)
+                if (found == -1) break
+                val range = found until (found + query.length)
+                result.add(FindMatch(range, listOf(text.substring(found, found + query.length))))
+                idx = found + query.length
+            }
+            result to null
         }
-        return result
+    }
+
+    /**
+     * Expands $0, $1, $2... capture-group references in [template] against [match] -
+     * $0 is the whole match, following Kotlin's MatchResult.groupValues convention.
+     * \$ escapes a literal dollar sign. Only meaningful in regex mode; literal mode's
+     * replacement text is used as-is with no special characters (see callers).
+     */
+    private fun expandReplacement(match: FindMatch, template: String): String {
+        val sb = StringBuilder()
+        var i = 0
+        while (i < template.length) {
+            val c = template[i]
+            if (c == '\\' && i + 1 < template.length && template[i + 1] == '$') {
+                sb.append('$')
+                i += 2
+                continue
+            }
+            if (c == '$' && i + 1 < template.length && template[i + 1].isDigit()) {
+                var j = i + 1
+                while (j < template.length && template[j].isDigit()) j++
+                val groupIndex = template.substring(i + 1, j).toInt()
+                sb.append(match.groupValues.getOrElse(groupIndex) { "" })
+                i = j
+                continue
+            }
+            sb.append(c)
+            i++
+        }
+        return sb.toString()
     }
 
     /** The current match's document offsets, for the view to scroll to and select. */
-    fun currentMatchRange(): IntRange? = matches.getOrNull(_currentMatchIndex.value)
+    fun currentMatchRange(): IntRange? = matches.getOrNull(_currentMatchIndex.value)?.range
 
     /** Every match found by the last [findNext] scan, for the view to outline. */
-    fun allMatchRanges(): List<IntRange> = matches
+    fun allMatchRanges(): List<IntRange> = matches.map { it.range }
 
     /**
      * Rescans the whole document from scratch (the doc may have changed since the
@@ -219,33 +285,36 @@ class EditorViewModel : ViewModel() {
      * to the first match if none is found after it.
      */
     fun findNext(cursorOffset: Int) {
-        val freshMatches = findMatches(_findQuery.value, _text.value)
+        val (freshMatches, error) = findMatches(_findQuery.value, _text.value, _useRegex.value)
         matches = freshMatches
         _matchCount.value = freshMatches.size
+        _regexError.value = error
         if (freshMatches.isEmpty()) {
             _currentMatchIndex.value = -1
             return
         }
-        val idx = freshMatches.indexOfFirst { it.first >= cursorOffset }.let { if (it == -1) 0 else it }
+        val idx = freshMatches.indexOfFirst { it.range.first >= cursorOffset }.let { if (it == -1) 0 else it }
         _currentMatchIndex.value = idx
         _scrollToMatchVersion.value++
     }
 
     /**
-     * Replaces just the current match with the replace field's text. Reuses the exact
-     * same accounting a normal typed edit goes through (dirty flag, line index,
-     * spans, and - critically - [applyEditToMatches]) so every *other* match shifts
-     * correctly and stays valid; only the just-replaced one is dropped, since its
-     * content no longer matches by definition. Lands on the next remaining match
-     * (wrapping to the first) so repeated taps of Replace walk forward through the
-     * document, mirroring [findNext].
+     * Replaces just the current match with the replace field's text (with $1-style
+     * capture-group expansion in regex mode). Reuses the exact same accounting a
+     * normal typed edit goes through (dirty flag, line index, spans, and -
+     * critically - [applyEditToMatches]) so every *other* match shifts correctly and
+     * stays valid; only the just-replaced one is dropped, since its content no longer
+     * matches by definition. Lands on the next remaining match (wrapping to the
+     * first) so repeated taps of Replace walk forward through the document,
+     * mirroring [findNext].
      */
     fun replaceCurrent() {
         val match = matches.getOrNull(_currentMatchIndex.value) ?: return
-        val replacement = _replaceQuery.value
+        val template = _replaceQuery.value
+        val replacement = if (_useRegex.value) expandReplacement(match, template) else template
         val old = _text.value
-        val start = match.first
-        val before = match.last + 1 - match.first
+        val start = match.range.first
+        val before = match.range.last + 1 - match.range.first
         val newText = old.substring(0, start) + replacement + old.substring(start + before)
 
         pushProgrammaticEdit(newText)
@@ -253,7 +322,7 @@ class EditorViewModel : ViewModel() {
         applyEditToMatches(start, before, replacement.length)
 
         val replacedEnd = start + replacement.length
-        val nextIdx = matches.indexOfFirst { it.first >= replacedEnd }
+        val nextIdx = matches.indexOfFirst { it.range.first >= replacedEnd }
         if (matches.isNotEmpty()) {
             _currentMatchIndex.value = if (nextIdx != -1) nextIdx else 0
             _scrollToMatchVersion.value++
@@ -261,29 +330,33 @@ class EditorViewModel : ViewModel() {
     }
 
     /**
-     * Replaces every match with the replace field's text in one shot. Always rescans
-     * from scratch first (rather than trusting the possibly-stale cached [matches])
-     * since this is a bulk, less-frequent operation where correctness matters more
-     * than avoiding one extra scan - unlike [replaceCurrent], which runs off whatever
-     * match the user is already looking at. Goes through the same full-reset path as
-     * opening a file ([setText]): matches are cleared (nothing left to point at until
-     * the next tap of Next) and the styled window resets to the top, which is a
-     * reasonable trade-off for a whole-document rewrite.
+     * Replaces every match with the replace field's text (with $1-style capture-group
+     * expansion per match in regex mode) in one shot. Always rescans from scratch
+     * first (rather than trusting the possibly-stale cached [matches]) since this is
+     * a bulk, less-frequent operation where correctness matters more than avoiding
+     * one extra scan - unlike [replaceCurrent], which runs off whatever match the
+     * user is already looking at. Goes through the same full-reset path as opening a
+     * file ([setText]): matches are cleared (nothing left to point at until the next
+     * tap of Next) and the styled window resets to the top, which is a reasonable
+     * trade-off for a whole-document rewrite.
      */
     fun replaceAll() {
         val query = _findQuery.value
         if (query.isEmpty()) return
-        val freshMatches = findMatches(query, _text.value)
+        val (freshMatches, error) = findMatches(query, _text.value, _useRegex.value)
+        _regexError.value = error
         if (freshMatches.isEmpty()) return
 
-        val replacement = _replaceQuery.value
+        val template = _replaceQuery.value
+        val useRegex = _useRegex.value
         val old = _text.value
         val sb = StringBuilder(old.length)
         var cursor = 0
         for (m in freshMatches) {
-            sb.append(old, cursor, m.first)
+            val replacement = if (useRegex) expandReplacement(m, template) else template
+            sb.append(old, cursor, m.range.first)
             sb.append(replacement)
-            cursor = m.last + 1
+            cursor = m.range.last + 1
         }
         sb.append(old, cursor, old.length)
 

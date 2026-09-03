@@ -70,6 +70,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
     val useRegex by viewModel.useRegex.collectAsState()
     val matchCount by viewModel.matchCount.collectAsState()
     val currentMatchIndex by viewModel.currentMatchIndex.collectAsState()
+    val regexError by viewModel.regexError.collectAsState()
     val scrollToMatchVersion by viewModel.scrollToMatchVersion.collectAsState()
     val spanVersion by viewModel.spanVersion.collectAsState()
     val loadVersion by viewModel.loadVersion.collectAsState()
@@ -364,8 +365,12 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                 modifier = Modifier.weight(1f),
                                 trailing = {
                                     Text(
-                                        text = if (findQuery.isEmpty()) "" else "${(currentMatchIndex + 1).coerceAtLeast(0)}/$matchCount",
-                                        color = FG.copy(alpha = 0.5f),
+                                        text = when {
+                                            findQuery.isEmpty() -> ""
+                                            regexError != null -> "Error"
+                                            else -> "${(currentMatchIndex + 1).coerceAtLeast(0)}/$matchCount"
+                                        },
+                                        color = if (regexError != null) Color(0xFFCC6666) else FG.copy(alpha = 0.5f),
                                         fontSize = 12.sp
                                     )
                                 }
@@ -394,7 +399,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
                             CompactTextField(
                                 value = replaceQuery,
                                 onValueChange = { viewModel.setReplaceQuery(it) },
-                                placeholder = "Replace",
+                                placeholder = if (useRegex) "Replace (\$1, \$2…)" else "Replace",
                                 modifier = Modifier.weight(1f)
                             )
                             Spacer(modifier = Modifier.width(4.dp))

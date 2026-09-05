@@ -2,11 +2,13 @@ package com.mangocodex
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
+import android.view.inputmethod.InputMethodManager
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -36,6 +38,38 @@ class CodeEditorView(context: Context) : ScrollView(context) {
     var onScrollChangedListener: (() -> Unit)? = null
 
     private val density = context.resources.displayMetrics.density
+
+    // How much of this view's bottom edge is currently covered by the on-screen
+    // keyboard, tracked via the window's actual visible frame rather than relying on
+    // layout resize (which may lag behind, or never happen at all under
+    // adjustPan/adjustNothing) or a fixed assumption about IME height.
+    private var keyboardInsetPx = 0
+    private val windowVisibleFrame = Rect()
+
+    // Height of any Compose overlay (the find/replace bar) sitting above the keyboard
+    // - set externally via setBottomOverlayHeight, since that content isn't part of
+    // this View's own hierarchy and so isn't reflected in the window frame at all.
+    private var bottomOverlayHeightPx = 0
+
+    private val globalLayoutListener = android.view.ViewTreeObserver.OnGlobalLayoutListener {
+        rootView.getWindowVisibleDisplayFrame(windowVisibleFrame)
+        keyboardInsetPx = (rootView.height - windowVisibleFrame.bottom).coerceAtLeast(0)
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        viewTreeObserver.addOnGlobalLayoutListener(globalLayoutListener)
+    }
+
+    override fun onDetachedFromWindow() {
+        viewTreeObserver.removeOnGlobalLayoutListener(globalLayoutListener)
+        super.onDetachedFromWindow()
+    }
+
+    /** Reserves extra space at the bottom of the viewport - e.g. for the find bar sitting above the keyboard. */
+    fun setBottomOverlayHeight(px: Int) {
+        bottomOverlayHeightPx = px
+    }
 
     init {
         isFillViewport = true
@@ -91,7 +125,16 @@ class CodeEditorView(context: Context) : ScrollView(context) {
         row.orientation = LinearLayout.HORIZONTAL
         row.addView(
             gutter,
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            // MATCH_PARENT height (not WRAP_CONTENT) deliberately - WRAP_CONTENT
+            // would size the gutter off its own text, which starts empty and is only
+            // populated later via refreshLineNumbers(). That left the gutter's box
+            // just one line tall until something else incidentally forced a later
+            // re-layout (e.g. focusing the field), even though its text content was
+            // already correct by then - the box itself just hadn't grown to show it.
+            // Matching the row's own height (already correct from frame one, since
+            // it's driven by the taller editText/horizontalScroller side) sidesteps
+            // that dependency entirely.
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.MATCH_PARENT)
         )
         row.addView(
             divider,
@@ -175,6 +218,29 @@ class CodeEditorView(context: Context) : ScrollView(context) {
         gutter.text = sb.toString()
     }
 
+    /**
+     * Same as [refreshLineNumbers], but self-correcting for the very first call after
+     * the view is created/gets new text: the EditText's internal Layout can still be
+     * incomplete (or entirely null) for the first frame or two after attachment -
+     * before anything else happens to trigger a later, real layout pass (like the
+     * user focusing the field) - which is why the gutter would otherwise get stuck
+     * showing just "1" on a freshly opened multi-line file until something
+     * incidental fixed it. Retries across a few frames, bounded, until the reported
+     * visual line count actually accounts for every line break in the text (visual
+     * lines can only be >= logical lines, never fewer, once wrapping is accounted
+     * for - so that's a reliable proxy for "the layout is actually done now").
+     */
+    fun refreshLineNumbersWhenReady(maxRetries: Int = 5) {
+        refreshLineNumbers()
+        if (maxRetries <= 0) return
+        val text = editText.text?.toString().orEmpty()
+        val expectedMinLines = text.count { it == '\n' } + 1
+        val layout = editText.layout
+        if (layout == null || layout.lineCount < expectedMinLines) {
+            editText.post { refreshLineNumbersWhenReady(maxRetries - 1) }
+        }
+    }
+
     override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
         super.onScrollChanged(l, t, oldl, oldt)
         onScrollChangedListener?.invoke()
@@ -196,5 +262,44 @@ class CodeEditorView(context: Context) : ScrollView(context) {
         val startOffset = layout.getLineStart(firstLine)
         val endOffset = layout.getLineEnd(lastLine)
         return startOffset to endOffset
+    }
+
+    /** Scrolls just enough to bring the line containing [offset] into view, accounting for the keyboard and any bottom overlay (see [setBottomOverlayHeight]). */
+    fun scrollToOffset(offset: Int) {
+        val layout = editText.layout ?: return
+        val length = editText.text?.length ?: 0
+        val clamped = offset.coerceIn(0, length)
+        val line = layout.getLineForOffset(clamped)
+        val lineTop = layout.getLineTop(line) + editText.paddingTop
+        val lineBottom = layout.getLineBottom(line) + editText.paddingTop
+        val visibleTop = scrollY
+        val bottomObstruction = keyboardInsetPx + bottomOverlayHeightPx
+        val visibleBottom = scrollY + height - bottomObstruction
+        when {
+            lineTop < visibleTop -> scrollTo(0, lineTop)
+            lineBottom > visibleBottom -> scrollTo(0, (lineBottom - height + bottomObstruction).coerceAtLeast(0))
+        }
+    }
+
+    /** Selects [range] and scrolls it into view - used to reveal the current find match. */
+    fun revealMatch(range: IntRange) {
+        editText.selectRange(range)
+        scrollToOffset(range.first)
+        // requestFocus() alone (done inside selectRange) moves input focus but won't
+        // reliably pop the keyboard when triggered programmatically rather than by a
+        // user touch - show it explicitly so the match is genuinely editable, not
+        // just visually selected while the keyboard stays targeting the find field.
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.showSoftInput(editText, InputMethodManager.SHOW_IMPLICIT)
+        // If the keyboard wasn't already up, showing it is asynchronous - the scroll
+        // above just happened with keyboardInsetPx still at its old (possibly zero)
+        // value. Re-scroll shortly after, once the window has actually resized and
+        // the global layout listener has picked up the real inset.
+        postDelayed({ scrollToOffset(range.first) }, 250)
+    }
+
+    /** Outlines every match in [ranges] - see [HighlightingEditText.applyMatchBorders]. */
+    fun applyMatchBorders(ranges: List<IntRange>, borderColor: Int) {
+        editText.applyMatchBorders(ranges, borderColor)
     }
 }

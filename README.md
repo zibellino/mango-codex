@@ -130,3 +130,7 @@ gradle assembleDebug
 ```
 
 Requires JDK 17 and Android SDK. CI via GitHub Actions on every push and release.
+
+---
+
+*Made with [Claude.ai](https://claude.ai)*

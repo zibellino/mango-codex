@@ -28,6 +28,12 @@ data class HighlightSpan(val start: Int, val end: Int, val color: Color)
  */
 class EditorViewModel : ViewModel() {
 
+    private var languagePatterns: LanguagePatterns = LanguagePatterns("")
+    // Re-resolved (and tokenCache invalidated) only when the current file's name
+    // actually changes or patterns get reloaded - not on every computeSpans() call,
+    // which happens on essentially every keystroke. "\u0000" is a sentinel that can
+    // never equal a real filename (or null), forcing the first real resolution.
+    private var cachedLexerFileName: String? = "\u0000"
     private var lexer: Lexer = Lexer(emptyList())
 
     private val _text = MutableStateFlow("")
@@ -85,7 +91,8 @@ class EditorViewModel : ViewModel() {
     fun loadPatterns(context: Context) {
         val csv = loadPatternsFromInternal(context)
             ?: context.assets.open(PATTERNS_INTERNAL_PATH).bufferedReader().readText()
-        lexer = Lexer.fromCsv(csv)
+        languagePatterns = LanguagePatterns(csv)
+        cachedLexerFileName = "\u0000" // force ensureLexerForCurrentFile to re-resolve
         tokenCache.clear()
         _spanVersion.value++
     }
@@ -554,12 +561,23 @@ class EditorViewModel : ViewModel() {
         return tokens
     }
 
+    /** Swaps in the right cached [Lexer] for the current file's full name, if it changed since last call. */
+    private fun ensureLexerForCurrentFile() {
+        val fileName = _currentFileName.value
+        if (fileName != cachedLexerFileName) {
+            cachedLexerFileName = fileName
+            lexer = languagePatterns.lexerFor(fileName)
+            tokenCache.clear() // old tokens were computed under a different rule set
+        }
+    }
+
     /**
      * Computes spans for the current styled window only. Pulled by the view whenever
      * spanVersion changes and applied directly onto the EditText's Editable as
      * ForegroundColorSpans - no full-document AnnotatedString rebuild involved.
      */
     fun computeSpans(): List<HighlightSpan> {
+        ensureLexerForCurrentFile()
         val currentLines = lines
         val offsets = lineStartOffsets
         val rangeStart = styledRange.first.coerceIn(0, currentLines.size - 1)

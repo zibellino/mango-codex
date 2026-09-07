@@ -124,7 +124,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
             TopAppBar(
                 title = {
                     Text(
-                        text = (currentFileName ?: "New file") + (if (isDirty) "•" else ""),
+                        text = (currentFileName ?: if (isPatternFile) "Edit patterns" else "New file") + (if (isDirty) "•" else ""),
                         color = FG,
                         fontFamily = FontFamily.Monospace
                     )

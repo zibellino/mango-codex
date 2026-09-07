@@ -167,6 +167,17 @@ class HighlightingEditText(context: Context) : AppCompatEditText(context) {
         setSelection(start, end)
     }
 
+    /**
+     * Disables the platform TextView's own "scroll the nearest scrollable ancestor to
+     * reveal the cursor" behavior. That logic runs on focus gain - i.e. as soon as a
+     * tap lands, before ACTION_UP has moved the selection to the tapped offset - so it
+     * scrolls the outer ScrollView to wherever the selection *previously* was (offset
+     * 0 right after a file load) rather than where the user just tapped, producing a
+     * visible snap-to-top on every tap-to-focus. Scrolling is already fully owned by
+     * CodeEditorView (see scrollToOffset/revealMatch), so it's safe to just no-op this.
+     */
+    override fun bringPointIntoView(offset: Int): Boolean = false
+
     override fun onFocusChanged(focused: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
         super.onFocusChanged(focused, direction, previouslyFocusedRect)
         if (!focused && selectionStart != selectionEnd) {

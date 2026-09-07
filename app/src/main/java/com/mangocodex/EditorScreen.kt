@@ -187,13 +187,6 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                     showMenu = false
                                 }
                             )
-                            DropdownMenuItem(
-                                text = { Text("Reload patterns") },
-                                onClick = {
-                                    viewModel.reloadPatterns(context)
-                                    showMenu = false
-                                }
-                            )
                             HorizontalDivider()
                             DropdownMenuItem(
                                 text = { Text(if (wrapLines) "✓ Wrap lines" else "Wrap lines") },

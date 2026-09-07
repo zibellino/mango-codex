@@ -97,8 +97,6 @@ class EditorViewModel : ViewModel() {
         _spanVersion.value++
     }
 
-    fun reloadPatterns(context: Context) = loadPatterns(context)
-
     private fun loadPatternsFromInternal(context: Context): String? {
         val file = context.getFileStreamPath(PATTERNS_INTERNAL_PATH)
         return if (file.exists()) file.readText() else null
@@ -451,7 +449,7 @@ class EditorViewModel : ViewModel() {
             it.write(_text.value)
         }
         _isDirty.value = false
-        reloadPatterns(context)
+        loadPatterns(context)
     }
 
     /**

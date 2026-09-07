@@ -124,7 +124,7 @@ fun EditorScreen(viewModel: EditorViewModel) {
             TopAppBar(
                 title = {
                     Text(
-                        text = (currentFileName ?: "New file") + (if (isDirty) "•" else ""),
+                        text = (currentFileName ?: if (isPatternFile) "Edit patterns" else "New file") + (if (isDirty) "•" else ""),
                         color = FG,
                         fontFamily = FontFamily.Monospace
                     )
@@ -184,13 +184,6 @@ fun EditorScreen(viewModel: EditorViewModel) {
                                 text = { Text("Edit patterns") },
                                 onClick = {
                                     runOrConfirmDiscard { viewModel.openInternalPatterns(context) }
-                                    showMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Reload patterns") },
-                                onClick = {
-                                    viewModel.reloadPatterns(context)
                                     showMenu = false
                                 }
                             )

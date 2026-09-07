@@ -55,7 +55,6 @@ A lightweight, native Android text editor with regex-based syntax highlighting.
 ### Pattern customization
 - Fully configurable pattern set via a plain CSV file
 - Edit patterns directly inside the app (`⋮ → Edit patterns`)
-- Hot reload patterns without restarting (`⋮ → Reload patterns`)
 - Malformed pattern rows (bad regex/color) are skipped rather than crashing
   the app
 
